@@ -8,7 +8,6 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-    /* Native looking markdown styling */
     .markdown-body h1 { font-size: 1.5rem; font-weight: 600; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.5rem; margin-top: 1.5rem; margin-bottom: 1rem; }
     .markdown-body h2 { font-size: 1.25rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.75rem; }
     .markdown-body p { margin-bottom: 1rem; color: #374151; line-height: 1.6; }
@@ -16,8 +15,6 @@
     .markdown-body code { font-family: Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace; font-size: 0.875rem; color: #ef4444; background: #fee2e2; padding: 0.1rem 0.3rem; border-radius: 0.25rem; }
     .markdown-body pre code { color: #1f2937; background: transparent; padding: 0; }
     .markdown-body a { color: #2563eb; text-decoration: underline; }
-    
-    /* Custom Scrollbar for native feel */
     ::-webkit-scrollbar { width: 8px; height: 8px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
@@ -42,9 +39,17 @@
         </li>
         <li>
           <button data-target="view-mcp" class="nav-btn w-full flex items-center gap-3 px-3 py-2 text-sm text-left rounded-md transition-colors hover:bg-gray-100 text-gray-700">
-            ☁️ MCP Cloud
+            ☁️ Affinity MCP
           </button>
         </li>
+
+        <li class="pt-6 pb-1"><div class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Discover</div></li>
+        <li>
+          <button data-target="view-community" class="nav-btn w-full flex items-center gap-3 px-3 py-2 text-sm text-left rounded-md transition-colors hover:bg-gray-100 text-gray-700">
+            🌍 Community Scripts
+          </button>
+        </li>
+
         <li class="pt-6 pb-1"><div class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Support</div></li>
         <li>
           <button data-target="view-docs" id="tab-docs" class="nav-btn w-full flex items-center gap-3 px-3 py-2 text-sm text-left rounded-md transition-colors hover:bg-gray-100 text-gray-700">
@@ -74,7 +79,6 @@
           <h2 class="text-2xl font-semibold text-gray-900">My Scripts</h2>
           <p class="text-gray-500 text-sm mt-1">Scripts stored locally on your disk.</p>
         </div>
-        <button id="btn-refresh-local" class="text-sm px-3 py-1.5 border border-gray-300 rounded hover:bg-gray-50 transition">Refresh</button>
       </div>
       <div id="local-tiles" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
     </div>
@@ -82,12 +86,32 @@
     <div id="view-mcp" class="view hidden flex-col h-full p-8 overflow-y-auto">
       <div class="flex justify-between items-end mb-6">
         <div>
-          <h2 class="text-2xl font-semibold text-gray-900">MCP Cloud</h2>
+          <h2 class="text-2xl font-semibold text-gray-900">Affinity MCP</h2>
           <p class="text-gray-500 text-sm mt-1">Scripts available on the remote server.</p>
         </div>
-        <button id="btn-refresh-mcp" class="text-sm px-3 py-1.5 border border-gray-300 rounded hover:bg-gray-50 transition">Refresh</button>
       </div>
       <div id="mcp-tiles" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+    </div>
+
+    <div id="view-community" class="view hidden flex-col h-full p-8 overflow-y-auto bg-gray-50">
+      <div class="flex justify-between items-start mb-4">
+        <div>
+          <h2 class="text-2xl font-semibold text-gray-900">Community Scripts</h2>
+          <p class="text-gray-500 text-sm mt-1">Discover and install scripts made by the Affinity community.</p>
+        </div>
+        <div class="flex gap-2">
+          <button id="btn-contribute" class="text-sm px-4 py-2 bg-gray-900 text-white rounded hover:bg-gray-800 transition shadow-sm flex items-center gap-2">
+            <span>➕</span> Submit Script
+          </button>
+          <button id="btn-refresh-community" class="text-sm px-4 py-2 bg-white border border-gray-300 rounded hover:bg-gray-50 transition shadow-sm">Refresh</button>
+        </div>
+      </div>
+      
+      <div class="mb-6">
+        <input type="text" id="community-search" placeholder="Search scripts by name, description, or author..." class="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none shadow-sm">
+      </div>
+
+      <div id="community-tiles" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5"></div>
     </div>
 
     <div id="view-docs" class="view hidden h-full flex flex-row border-t border-gray-200">
@@ -162,10 +186,12 @@
   </div>
 
   <script>
-    // --- Navigation ---
     const navBtns = document.querySelectorAll('.nav-btn');
     const views = document.querySelectorAll('.view');
     let docsLoaded = false;
+    let communityLoaded = false;
+    
+    let allCommunityScripts = [];
 
     navBtns.forEach(btn => {
       btn.addEventListener('click', () => {
@@ -182,17 +208,18 @@
           if (v.id === target) v.classList.remove('hidden');
         });
 
-        if (target === 'view-docs' && !docsLoaded) {
-          loadDocumentation();
-        }
+        // Automatické načítání při kliknutí na danou záložku
+        // Automatické načítání při kliknutí na danou záložku
+        if (target === 'view-local') loadLocalScripts();
+        if (target === 'view-mcp') loadMcpScripts();
+        if (target === 'view-docs' && !docsLoaded) loadDocumentation();
+        if (target === 'view-community') loadCommunityScripts(); // Nyní se načte POKAŽDÉ, když na záložku klikneš
       });
     });
 
-    // --- Modals ---
     const closeAllModals = () => document.querySelectorAll('.fixed.z-50').forEach(m => m.classList.add('hidden'));
     document.querySelectorAll('.close-modal').forEach(b => b.onclick = closeAllModals);
 
-    // --- Upload Flow ---
     document.getElementById('btn-open-upload').onclick = () => {
       document.getElementById('up-title').value = '';
       document.getElementById('up-desc').value = '';
@@ -228,7 +255,6 @@
       } else alert(res.error);
     };
 
-    // --- Download Flow ---
     const openDownloadModal = (mcpTitle) => {
       document.getElementById('dl-mcp-target').value = mcpTitle;
       document.getElementById('dl-filename').value = mcpTitle.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
@@ -253,7 +279,6 @@
       } else alert(res.error);
     };
 
-    // --- Data Loading ---
     async function loadLocalScripts() {
       const container = document.getElementById('local-tiles');
       const res = await window.api.listLocalScripts();
@@ -271,7 +296,7 @@
           </div>
           <div class="mt-auto flex flex-col gap-2">
             <button class="btn-push w-full border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium text-xs py-1.5 rounded transition">
-              ⬆️ Push to Cloud
+              ⬆️ Push to Affinity
             </button>
             <div class="flex gap-2">
               <button class="btn-export flex-1 border border-gray-300 hover:bg-gray-50 text-gray-700 text-xs py-1.5 rounded transition">Export...</button>
@@ -286,13 +311,10 @@
             loadLocalScripts();
           }
         };
-        
         div.querySelector('.btn-export').onclick = async () => window.api.exportToDisk(file);
-        
         div.querySelector('.btn-push').onclick = async () => {
           const btn = div.querySelector('.btn-push');
-          btn.innerText = "Pushing..."; 
-          btn.disabled = true;
+          btn.innerText = "Pushing..."; btn.disabled = true;
           
           const pushRes = await window.api.pushToMcp(file);
           if(pushRes.success) {
@@ -301,9 +323,8 @@
             btn.classList.replace('text-blue-700', 'text-green-700');
             btn.classList.replace('border-blue-200', 'border-green-200');
             loadMcpScripts();
-            
             setTimeout(() => {
-              btn.innerText = "⬆️ Push to Cloud";
+              btn.innerText = "⬆️ Push to Affinity";
               btn.classList.replace('bg-green-50', 'bg-blue-50');
               btn.classList.replace('text-green-700', 'text-blue-700');
               btn.classList.replace('border-green-200', 'border-blue-200');
@@ -311,11 +332,10 @@
             }, 2000);
           } else {
             alert("Error pushing to cloud: " + pushRes.error);
-            btn.innerText = "⬆️ Push to Cloud"; 
+            btn.innerText = "⬆️ Push to Affinity"; 
             btn.disabled = false;
           }
         };
-
         container.appendChild(div);
       });
     }
@@ -328,7 +348,7 @@
       const safeData = typeof res.data === 'string' ? res.data : "";
       const scripts = safeData.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
       
-      if(scripts.length === 0) return container.innerHTML = `<div class="text-gray-500 text-sm col-span-full">Cloud is empty.</div>`;
+      if(scripts.length === 0) return container.innerHTML = `<div class="text-gray-500 text-sm col-span-full">Affinity MCP Cloud is empty.</div>`;
       
       container.innerHTML = '';
       scripts.forEach(title => {
@@ -345,29 +365,96 @@
       });
     }
 
-    // --- Documentation Seamless Loading ---
+    async function loadCommunityScripts() {
+      const container = document.getElementById('community-tiles');
+      container.innerHTML = '<div class="text-gray-400 text-sm animate-pulse">Fetching community registry...</div>';
+      
+      const res = await window.api.listCommunityScripts();
+      if(!res.success) {
+        container.innerHTML = `<div class="text-red-500 text-sm p-4 bg-red-50 border border-red-100 rounded-md">Error: ${res.error}</div>`;
+        return;
+      }
+
+      allCommunityScripts = res.data || [];
+      renderCommunityScripts(allCommunityScripts);
+    }
+
+    function renderCommunityScripts(scripts) {
+      const container = document.getElementById('community-tiles');
+      
+      if(scripts.length === 0) {
+        container.innerHTML = `<div class="text-gray-500 text-sm col-span-full border-2 border-dashed border-gray-200 rounded-lg p-12 text-center">No scripts found.</div>`;
+        return;
+      }
+
+      container.innerHTML = '';
+      scripts.forEach(script => {
+        const div = document.createElement('div');
+        div.className = "group border border-gray-200 rounded-lg p-5 flex flex-col bg-white hover:border-blue-400 transition shadow-sm h-full";
+        div.innerHTML = `
+          <div class="flex justify-between items-start mb-2">
+            <h4 class="font-bold text-gray-900 group-hover:text-blue-600 transition-colors">${script.name}</h4>
+            <span class="text-[10px] font-bold px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded whitespace-nowrap">v${script.version || '1.0.0'}</span>
+          </div>
+          <p class="text-xs text-gray-600 mb-4 line-clamp-3 flex-grow">${script.description}</p>
+          <div class="flex items-center justify-between mb-4 mt-auto">
+            <span class="text-[10px] text-gray-400">By <span class="font-medium">${script.author || 'Community'}</span></span>
+            ${script.category ? `<span class="text-[10px] text-blue-600 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded">${script.category}</span>` : ''}
+          </div>
+          <button class="btn-install w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium py-2 rounded transition shadow-sm mt-auto">
+            Install Script
+          </button>
+        `;
+        
+        div.querySelector('.btn-install').onclick = async () => {
+          const btn = div.querySelector('.btn-install');
+          const originalText = btn.innerText;
+          btn.innerText = "Installing..."; btn.disabled = true;
+
+          const dlRes = await window.api.downloadCommunityScript(script.download_url, script.name);
+          if (dlRes.success) {
+            btn.innerText = "✓ Installed";
+            btn.className = "w-full bg-green-600 text-white text-xs font-medium py-2 rounded shadow-sm mt-auto transition";
+            loadLocalScripts();
+            loadMcpScripts();
+          } else {
+            alert("Error downloading: " + dlRes.error);
+            btn.innerText = originalText; btn.disabled = false;
+          }
+        };
+        container.appendChild(div);
+      });
+    }
+
+    document.getElementById('community-search').addEventListener('input', (e) => {
+      const query = e.target.value.toLowerCase();
+      const filtered = allCommunityScripts.filter(s => 
+        (s.name && s.name.toLowerCase().includes(query)) ||
+        (s.description && s.description.toLowerCase().includes(query)) ||
+        (s.author && s.author.toLowerCase().includes(query))
+      );
+      renderCommunityScripts(filtered);
+    });
+
+    document.getElementById('btn-contribute').onclick = () => window.api.openExternalRepo();
+
     async function loadDocumentation() {
       document.getElementById('docs-loading').innerHTML = '<p class="text-gray-500">Fetching docs from server...</p>';
       const res = await window.api.fetchDocs();
-      
       if(res.success && res.data.length > 0) {
         docsLoaded = true;
         document.getElementById('docs-sidebar').classList.remove('hidden');
         document.getElementById('docs-sidebar').classList.add('block');
         document.getElementById('docs-loading').classList.add('hidden');
-        
         const listEl = document.getElementById('docs-list');
         const contentEl = document.getElementById('docs-content');
         listEl.innerHTML = '';
-
         res.data.forEach((doc, idx) => {
           const li = document.createElement('li');
           li.className = "px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-200 cursor-pointer border-b border-gray-100 truncate transition";
           li.innerText = doc.title;
           li.onclick = () => {
-            document.querySelectorAll('#docs-list li').forEach(el => {
-              el.classList.remove('bg-blue-100', 'text-blue-700', 'font-medium');
-            });
+            document.querySelectorAll('#docs-list li').forEach(el => el.classList.remove('bg-blue-100', 'text-blue-700', 'font-medium'));
             li.classList.add('bg-blue-100', 'text-blue-700', 'font-medium');
             contentEl.innerHTML = marked.parse(doc.content);
           };
@@ -379,7 +466,6 @@
       }
     }
 
-    // --- Search ---
     document.getElementById('btn-search').onclick = async () => {
       const q = document.getElementById('search-query').value.trim();
       const out = document.getElementById('out-search');
@@ -391,9 +477,8 @@
     };
     document.getElementById('search-query').addEventListener('keypress', (e) => { if(e.key === 'Enter') document.getElementById('btn-search').click(); });
 
-    // Buttons
-    document.getElementById('btn-refresh-local').onclick = loadLocalScripts;
-    document.getElementById('btn-refresh-mcp').onclick = loadMcpScripts;
+    // Ponechán pouze refresh pro komunitu
+    document.getElementById('btn-refresh-community').onclick = loadCommunityScripts;
 
     window.addEventListener('DOMContentLoaded', () => {
       loadLocalScripts();
