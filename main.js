@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const { Client } = require("@modelcontextprotocol/sdk/client/index.js");
@@ -7,7 +7,7 @@ const { CallToolResultSchema } = require("@modelcontextprotocol/sdk/types.js");
 
 const SERVER_URL = "http://localhost:6767/sse";
 
-// --- Pomocné funkce ---
+// --- Helper Functions ---
 function getTextContent(result) {
   return (result.content || []).filter((i) => i && i.type === "text").map((i) => i.text).join("\n");
 }
@@ -26,23 +26,23 @@ let transport;
 let localScriptsDir;
 
 app.whenReady().then(async () => {
-  // Inicializace bezpečné systémové složky pro lokální skripty
+  // Initialize secure local directory for scripts
   localScriptsDir = path.join(app.getPath('userData'), 'MyScripts');
   await fs.mkdir(localScriptsDir, { recursive: true });
 
-  // Připojení k MCP serveru
+  // Connect to the MCP Server
   client = new Client({ name: "script-mgr-ui", version: "1.0.0" });
   transport = new SSEClientTransport(new URL(SERVER_URL));
   await client.connect(transport).catch(console.error);
 
-  // Vytvoření hlavního okna
+  // Create Main Window
   const win = new BrowserWindow({
-    width: 1100, height: 800, title: "Script Manager",
+    width: 1100, height: 800, title: "Affinity Script Manager",
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true }
   });
 
   // ==========================================
-  // --- LOKÁLNÍ SKRIPTY (Soubory na disku) ---
+  // --- LOCAL SCRIPTS (Files on Disk) ---
   // ==========================================
 
   ipcMain.handle('list-local-scripts', async () => {
@@ -59,7 +59,7 @@ app.whenReady().then(async () => {
     } catch (e) { return { success: false, error: e.message }; }
   });
 
-  // Pouze pro čtení obsahu při nahrávání (modal upload)
+  // Read file contents for upload modal
   ipcMain.handle('select-file', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog(win, { properties: ['openFile'], filters: [{ name: 'JavaScript', extensions: ['js'] }] });
     if (canceled || filePaths.length === 0) return { success: false };
@@ -68,7 +68,7 @@ app.whenReady().then(async () => {
     return { success: true, data: { name, code } };
   });
 
-  // Exportování vybraného lokálního skriptu někam jinam (např. na Plochu)
+  // Export a local script to a custom directory
   ipcMain.handle('export-to-disk', async (event, filename) => {
     try {
       const code = await fs.readFile(path.join(localScriptsDir, filename), "utf8");
@@ -79,12 +79,12 @@ app.whenReady().then(async () => {
     } catch (error) { return { success: false, error: error.message }; }
   });
 
-  // PUSH DO MCP: Zkopíruje lokální skript na cloudový server
+  // PUSH TO MCP: Send a local script to the cloud server
   ipcMain.handle('push-to-mcp', async (event, filename) => {
     try {
       const filePath = path.join(localScriptsDir, filename);
       const code = await fs.readFile(filePath, "utf8");
-      const title = path.parse(filename).name; // Název bez .js
+      const title = path.parse(filename).name;
       const description = "Pushed from Local Library";
       
       await callTool(client, "save_script_to_library", { title, description, code });
@@ -93,7 +93,7 @@ app.whenReady().then(async () => {
   });
 
   // ==========================================
-  // --- MCP KOMUNIKACE (Cloud) ---
+  // --- MCP COMMUNICATION (Cloud) ---
   // ==========================================
 
   ipcMain.handle('list-mcp-scripts', async () => {
@@ -103,17 +103,21 @@ app.whenReady().then(async () => {
     } catch (error) { return { success: false, error: error.message }; }
   });
 
-  // Nahrání nového skriptu (uloží ho do Cloudu i Lokálně)
+  // Save new script (Saves to MCP AND Locally)
   ipcMain.handle('save-script', async (event, title, description, code) => {
     try {
-      await callTool(client, "save_script_to_library", { title, description, code });
+      // Fallback description to prevent MCP server from throwing an error
+      const safeDescription = description ? description : "Uploaded via Script Manager";
+
+      await callTool(client, "save_script_to_library", { title, description: safeDescription, code });
+      
       const safeFilename = title.toLowerCase().replace(/[^a-z0-9_-]/g, '-') + '.js';
       await fs.writeFile(path.join(localScriptsDir, safeFilename), code, "utf8");
       return { success: true };
     } catch (error) { return { success: false, error: error.message }; }
   });
 
-  // Stažení z Cloudu do Lokální knihovny
+  // Download from MCP to Local Library
   ipcMain.handle('download-from-mcp', async (event, mcpTitle, localName) => {
     try {
       const result = await callTool(client, "read_library_script", { title: mcpTitle });
@@ -127,7 +131,43 @@ app.whenReady().then(async () => {
   });
 
   // ==========================================
-  // --- DOKUMENTACE A HLEDÁNÍ ---
+  // --- COMMUNITY REPOSITORY (Marketplace) ---
+  // ==========================================
+
+  const REGISTRY_URL = 'https://raw.githubusercontent.com/JiriKrblich/Affinity-Community-Scripts/refs/heads/main/registry.json';
+
+  ipcMain.handle('list-community-scripts', async () => {
+    try {
+      const response = await fetch(REGISTRY_URL);
+      if (!response.ok) throw new Error("Could not load community registry. Check your connection.");
+      
+      const registry = await response.json();
+      return { success: true, data: registry.scripts }; 
+    } catch (error) { 
+      return { success: false, error: error.message }; 
+    }
+  });
+
+  ipcMain.handle('download-community-script', async (event, downloadUrl, filename) => {
+    try {
+      const response = await fetch(downloadUrl);
+      if (!response.ok) throw new Error("Error downloading file from server.");
+      
+      const code = await response.text();
+      const safeName = filename.toLowerCase().replace(/[^a-z0-9_-]/g, '-') + '.js';
+      await fs.writeFile(path.join(localScriptsDir, safeName), code, "utf8");
+      
+      return { success: true };
+    } catch (error) { return { success: false, error: error.message }; }
+  });
+
+  // Open browser for Issues
+  ipcMain.on('open-external-repo', () => {
+    shell.openExternal('https://github.com/JiriKrblich/Affinity-Community-Scripts/issues/new');
+  });
+
+  // ==========================================
+  // --- DOCUMENTATION & SEARCH ---
   // ==========================================
 
   ipcMain.handle('fetch-docs', async () => {
@@ -152,11 +192,11 @@ app.whenReady().then(async () => {
     } catch (error) { return { success: false, error: error.message }; }
   });
 
-  // Načtení hlavního UI
+  // Load Main UI
   win.loadFile('index.html');
 });
 
-// Bezpečné ukončení
+// Graceful Quit
 app.on('window-all-closed', async () => {
   if (transport) await transport.close().catch(()=>{});
   if (process.platform !== 'darwin') app.quit();
