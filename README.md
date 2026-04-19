@@ -106,3 +106,6 @@ Once your registry.json is ready, anyone can paste your GitHub link into their a
 - [x] Custom git repos
 - [x] Better UI
 - [ ] App branding
+
+## Disclaimer
+**Keep in mind:** this repo is not connected to the Affinity Developers and Affinity is Canva's brand. 
