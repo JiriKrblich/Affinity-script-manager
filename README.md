@@ -89,7 +89,7 @@ Want to share your scripts with the world? It's incredibly easy to make your Git
       "version": "1.0.0",
       "author": "Your Name",
       "category": "Layers",
-      "download_url": "[https://raw.githubusercontent.com/username/repo/main/my-script.js](https://raw.githubusercontent.com/username/repo/main/my-script.js)"
+      "download_url": "https://raw.githubusercontent.com/username/repo/main/my-script.js"
     }
   ]
 }
