@@ -1,5 +1,6 @@
 # Affinity Script Manager
 ElectronJS based UI manager for Affinity App scripts
+
 ![Screenshot](readme/screen.png)
 
 ## ✨ Features
@@ -11,8 +12,15 @@ ElectronJS based UI manager for Affinity App scripts
 * **💻 Native UI Feel:** Built with Tailwind CSS, the app features a clean, light-mode interface that feels right at home on Mac or Windows.
 
 ## 💡 How to Use
-Uploading a Script: Click "Upload Script" in the sidebar. You can select a .js file from your disk. The app will automatically read it and save it to both your Local Library and the MCP Cloud.
+**Uploading a Script:** Click "Upload Script" in the sidebar. You can select a .js file from your disk. The app will automatically read it and save it to both your Local Library and the MCP Cloud.
 
-Downloading: Go to the "MCP Cloud" tab and click "Download to Library" on any script. It will instantly be saved to your local MyScripts directory.
+**Downloading:** Go to the "MCP Cloud" tab and click "Download to Library" on any script. It will instantly be saved to your local MyScripts directory.
 
-Reading Docs: Click on "Documentation". The app will fetch all available docs from the server and render them on the fly.
+**Reading Docs:** Click on "Documentation". The app will fetch all available docs from the server and render them on the fly.
+
+## ✅ Roadmap
+- [ ] Standard format of Scripts – Autofill info about script into UI
+- [ ] Update manager of App – App autoupdate
+- [ ] Updating existing scripts from the git repo
+- [ ] Better UI
+- [ ] App branding
