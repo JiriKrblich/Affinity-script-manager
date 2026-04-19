@@ -1,7 +1,7 @@
 # Affinity Script Manager
 ElectronJS based UI manager for Affinity App scripts
 
-![Screenshot](readme/screen.png)
+![Cover photo with screenshot of Script Manager](readme/cover.png)
 
 ## ✨ Features
 
