@@ -25,7 +25,7 @@
     ::-webkit-scrollbar-thumb:hover { background: #737373; }
   </style>
 </head>
-<body class="bg-neutral-900 text-neutral-300 flex h-screen overflow-hidden antialiased select-none selection:bg-[#a7f175] selection:text-neutral-900">
+<body class="bg-neutral-900 text-neutral-200 flex h-screen overflow-hidden antialiased select-none selection:bg-[#a7f175] selection:text-neutral-900">
 
   <aside class="w-64 bg-neutral-950 border-r border-neutral-800 flex flex-col">
     <div class="p-5 font-bold text-lg text-white flex items-center gap-2">
@@ -35,33 +35,33 @@
     
     <nav class="flex-1 overflow-y-auto py-2">
       <ul class="space-y-1 px-3">
-        <li class="pt-2 pb-1"><div class="px-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Library</div></li>
+        <li class="pt-2 pb-1"><div class="px-3 text-xs font-semibold text-neutral-400 uppercase tracking-wider">Library</div></li>
         <li>
           <button data-target="view-local" class="nav-btn w-full flex items-center gap-3 px-3 py-2 text-sm text-left rounded-md transition-colors bg-[#a7f175]/10 text-[#a7f175] font-medium">
             📂 My Local Scripts
           </button>
         </li>
         <li>
-          <button data-target="view-mcp" class="nav-btn w-full flex items-center gap-3 px-3 py-2 text-sm text-left rounded-md transition-colors hover:bg-neutral-900 text-neutral-400">
+          <button data-target="view-mcp" class="nav-btn w-full flex items-center gap-3 px-3 py-2 text-sm text-left rounded-md transition-colors hover:bg-neutral-900 text-neutral-300 hover:text-white">
             ☁️ Affinity MCP
           </button>
         </li>
 
-        <li class="pt-6 pb-1"><div class="px-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Discover</div></li>
+        <li class="pt-6 pb-1"><div class="px-3 text-xs font-semibold text-neutral-400 uppercase tracking-wider">Discover</div></li>
         <li>
-          <button data-target="view-community" class="nav-btn w-full flex items-center gap-3 px-3 py-2 text-sm text-left rounded-md transition-colors hover:bg-neutral-900 text-neutral-400">
+          <button data-target="view-community" class="nav-btn w-full flex items-center gap-3 px-3 py-2 text-sm text-left rounded-md transition-colors hover:bg-neutral-900 text-neutral-300 hover:text-white">
             🌍 Community Scripts
           </button>
         </li>
 
-        <li class="pt-6 pb-1"><div class="px-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Support</div></li>
+        <li class="pt-6 pb-1"><div class="px-3 text-xs font-semibold text-neutral-400 uppercase tracking-wider">Support</div></li>
         <li>
-          <button data-target="view-docs" id="tab-docs" class="nav-btn w-full flex items-center gap-3 px-3 py-2 text-sm text-left rounded-md transition-colors hover:bg-neutral-900 text-neutral-400">
+          <button data-target="view-docs" id="tab-docs" class="nav-btn w-full flex items-center gap-3 px-3 py-2 text-sm text-left rounded-md transition-colors hover:bg-neutral-900 text-neutral-300 hover:text-white">
             📖 Documentation
           </button>
         </li>
         <li>
-          <button data-target="view-search" class="nav-btn w-full flex items-center gap-3 px-3 py-2 text-sm text-left rounded-md transition-colors hover:bg-neutral-900 text-neutral-400">
+          <button data-target="view-search" class="nav-btn w-full flex items-center gap-3 px-3 py-2 text-sm text-left rounded-md transition-colors hover:bg-neutral-900 text-neutral-300 hover:text-white">
             🔍 Search SDK
           </button>
         </li>
@@ -81,7 +81,7 @@
       <div class="flex justify-between items-end mb-6">
         <div>
           <h2 class="text-2xl font-bold text-white">My Scripts</h2>
-          <p class="text-neutral-400 text-sm mt-1">Scripts stored locally on your disk.</p>
+          <p class="text-neutral-300 text-sm mt-1">Scripts stored locally on your disk.</p>
         </div>
       </div>
       <div id="local-tiles" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"></div>
@@ -91,7 +91,7 @@
       <div class="flex justify-between items-end mb-6">
         <div>
           <h2 class="text-2xl font-bold text-white">Affinity MCP</h2>
-          <p class="text-neutral-400 text-sm mt-1">Scripts available on the remote server.</p>
+          <p class="text-neutral-300 text-sm mt-1">Scripts available on the remote server.</p>
         </div>
       </div>
       <div id="mcp-tiles" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"></div>
@@ -101,7 +101,7 @@
       <div class="flex justify-between items-start mb-4">
         <div>
           <h2 class="text-2xl font-bold text-white">Community Scripts</h2>
-          <p class="text-neutral-400 text-sm mt-1">Discover and install scripts made by the Affinity community.</p>
+          <p class="text-neutral-300 text-sm mt-1">Discover and install scripts made by the Affinity community.</p>
         </div>
         <div class="flex gap-2">
           <button id="btn-contribute" class="text-sm px-5 py-2.5 bg-[#a7f175] hover:bg-[#95e561] text-neutral-900 font-bold rounded-lg transition shadow-sm flex items-center gap-2">
@@ -114,7 +114,7 @@
       </div>
       
       <div class="mb-8">
-        <input type="text" id="community-search" placeholder="Search scripts by name, description, or author..." class="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-3 text-sm text-white focus:border-[#a7f175] focus:ring-1 focus:ring-[#a7f175] focus:outline-none shadow-sm placeholder-neutral-600 transition">
+        <input type="text" id="community-search" placeholder="Search scripts by name, description, or author..." class="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-4 py-3 text-sm text-white focus:border-[#a7f175] focus:ring-1 focus:ring-[#a7f175] focus:outline-none shadow-sm placeholder-neutral-500 transition">
       </div>
 
       <div id="community-tiles" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5"></div>
@@ -125,7 +125,7 @@
         <ul id="docs-list" class="py-2"></ul>
       </div>
       <div id="docs-content" class="flex-1 p-8 overflow-y-auto markdown-body">
-        <div id="docs-loading" class="flex flex-col items-center justify-center h-full text-neutral-500">
+        <div id="docs-loading" class="flex flex-col items-center justify-center h-full text-neutral-400">
           <p class="mb-4 text-lg">Fetching documentation from MCP...</p>
         </div>
       </div>
@@ -135,10 +135,10 @@
       <h2 class="text-2xl font-bold text-white mb-6">Search SDK Hints</h2>
       <div class="max-w-3xl">
         <div class="flex gap-2 mb-6">
-          <input type="text" id="search-query" placeholder="E.g. how to handle authentication..." class="flex-1 bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-white focus:border-[#a7f175] focus:ring-1 focus:ring-[#a7f175] focus:outline-none placeholder-neutral-600">
+          <input type="text" id="search-query" placeholder="E.g. how to handle authentication..." class="flex-1 bg-neutral-950 border border-neutral-700 rounded-lg px-4 py-2.5 text-sm text-white focus:border-[#a7f175] focus:ring-1 focus:ring-[#a7f175] focus:outline-none placeholder-neutral-500">
           <button id="btn-search" class="px-6 py-2.5 bg-[#a7f175] hover:bg-[#95e561] text-neutral-900 font-bold text-sm rounded-lg transition shadow-sm">Search</button>
         </div>
-        <div id="out-search" class="p-6 border border-neutral-800 bg-neutral-950 rounded-lg text-neutral-300 text-sm markdown-body min-h-[200px]">
+        <div id="out-search" class="p-6 border border-neutral-800 bg-neutral-950 rounded-lg text-neutral-200 text-sm markdown-body min-h-[200px]">
           Results will appear here.
         </div>
       </div>
@@ -147,45 +147,45 @@
   </main>
 
   <div id="modal-upload" class="fixed inset-0 z-50 hidden bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="bg-neutral-900 border border-neutral-800 rounded-xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col">
+    <div class="bg-neutral-900 border border-neutral-700 rounded-xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col">
       <div class="px-6 py-4 border-b border-neutral-800 flex justify-between items-center bg-neutral-950">
         <h3 class="font-bold text-white">Upload Script</h3>
-        <button class="close-modal text-neutral-500 hover:text-white transition">&times;</button>
+        <button class="close-modal text-neutral-400 hover:text-white transition">&times;</button>
       </div>
       <div class="p-6 space-y-5">
-        <p class="text-xs text-neutral-400">This script will be saved locally and pushed to the MCP server.</p>
+        <p class="text-xs text-neutral-300">This script will be saved locally and pushed to the MCP server.</p>
         <button id="btn-select-file" class="w-full py-2.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg text-sm font-medium transition shadow-sm">
           Select .js File
         </button>
         <div>
-          <label class="block text-xs font-semibold text-neutral-300 mb-1.5">Title</label>
-          <input type="text" id="up-title" class="w-full bg-neutral-950 border border-neutral-700 text-white rounded-lg px-3 py-2 text-sm focus:border-[#a7f175] focus:outline-none">
+          <label class="block text-xs font-semibold text-neutral-200 mb-1.5">Title</label>
+          <input type="text" id="up-title" class="w-full bg-neutral-950 border border-neutral-600 text-white rounded-lg px-3 py-2 text-sm focus:border-[#a7f175] focus:outline-none">
         </div>
         <div>
-          <label class="block text-xs font-semibold text-neutral-300 mb-1.5">Description (Optional)</label>
-          <input type="text" id="up-desc" class="w-full bg-neutral-950 border border-neutral-700 text-white rounded-lg px-3 py-2 text-sm focus:border-[#a7f175] focus:outline-none">
+          <label class="block text-xs font-semibold text-neutral-200 mb-1.5">Description (Optional)</label>
+          <input type="text" id="up-desc" class="w-full bg-neutral-950 border border-neutral-600 text-white rounded-lg px-3 py-2 text-sm focus:border-[#a7f175] focus:outline-none">
         </div>
         <textarea id="up-code" class="hidden"></textarea>
       </div>
       <div class="px-6 py-4 border-t border-neutral-800 bg-neutral-950 flex justify-end gap-3">
-        <button class="close-modal px-4 py-2 text-neutral-400 text-sm font-medium hover:bg-neutral-800 rounded-lg transition">Cancel</button>
+        <button class="close-modal px-4 py-2 text-neutral-300 text-sm font-medium hover:bg-neutral-800 hover:text-white rounded-lg transition">Cancel</button>
         <button id="btn-submit-upload" class="px-5 py-2.5 bg-[#a7f175] hover:bg-[#95e561] text-neutral-900 text-sm font-bold rounded-lg shadow-sm transition">Save Script</button>
       </div>
     </div>
   </div>
 
   <div id="modal-download" class="fixed inset-0 z-50 hidden bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="bg-neutral-900 border border-neutral-800 rounded-xl w-full max-w-sm shadow-2xl overflow-hidden flex flex-col">
+    <div class="bg-neutral-900 border border-neutral-700 rounded-xl w-full max-w-sm shadow-2xl overflow-hidden flex flex-col">
       <div class="px-6 py-4 border-b border-neutral-800 bg-neutral-950">
         <h3 class="font-bold text-white">Download to Library</h3>
       </div>
       <div class="p-6">
-        <label class="block text-xs font-semibold text-neutral-300 mb-1.5">Save as (Filename)</label>
-        <input type="text" id="dl-filename" class="w-full bg-neutral-950 border border-neutral-700 text-white rounded-lg px-3 py-2 text-sm focus:border-[#a7f175] focus:outline-none">
+        <label class="block text-xs font-semibold text-neutral-200 mb-1.5">Save as (Filename)</label>
+        <input type="text" id="dl-filename" class="w-full bg-neutral-950 border border-neutral-600 text-white rounded-lg px-3 py-2 text-sm focus:border-[#a7f175] focus:outline-none">
         <input type="hidden" id="dl-mcp-target">
       </div>
       <div class="px-6 py-4 border-t border-neutral-800 bg-neutral-950 flex justify-end gap-3">
-        <button class="close-modal px-4 py-2 text-neutral-400 text-sm font-medium hover:bg-neutral-800 rounded-lg transition">Cancel</button>
+        <button class="close-modal px-4 py-2 text-neutral-300 text-sm font-medium hover:bg-neutral-800 hover:text-white rounded-lg transition">Cancel</button>
         <button id="btn-submit-download" class="px-5 py-2.5 bg-[#a7f175] hover:bg-[#95e561] text-neutral-900 text-sm font-bold rounded-lg shadow-sm transition">Download</button>
       </div>
     </div>
@@ -202,12 +202,13 @@
     // --- Navigation ---
     navBtns.forEach(btn => {
       btn.addEventListener('click', () => {
+        // Změna tříd při přepnutí záložek
         navBtns.forEach(b => {
           b.classList.remove('bg-[#a7f175]/10', 'text-[#a7f175]', 'font-medium');
-          b.classList.add('hover:bg-neutral-900', 'text-neutral-400');
+          b.classList.add('hover:bg-neutral-900', 'text-neutral-300', 'hover:text-white');
         });
         btn.classList.add('bg-[#a7f175]/10', 'text-[#a7f175]', 'font-medium');
-        btn.classList.remove('hover:bg-neutral-900', 'text-neutral-400');
+        btn.classList.remove('hover:bg-neutral-900', 'text-neutral-300', 'hover:text-white');
 
         const target = btn.getAttribute('data-target');
         views.forEach(v => {
@@ -292,7 +293,7 @@
       const container = document.getElementById('local-tiles');
       const res = await window.api.listLocalScripts();
       if(!res.success) return container.innerHTML = `<div class="text-red-400 text-sm">Error: ${res.error}</div>`;
-      if(res.data.length === 0) return container.innerHTML = `<div class="text-neutral-500 text-sm col-span-full border border-neutral-800 border-dashed rounded-lg p-12 text-center">No local scripts.</div>`;
+      if(res.data.length === 0) return container.innerHTML = `<div class="text-neutral-400 text-sm col-span-full border border-neutral-700 border-dashed rounded-lg p-12 text-center">No local scripts.</div>`;
       
       container.innerHTML = '';
       res.data.forEach(file => {
@@ -360,7 +361,7 @@
       const safeData = typeof res.data === 'string' ? res.data : "";
       const scripts = safeData.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
       
-      if(scripts.length === 0) return container.innerHTML = `<div class="text-neutral-500 text-sm col-span-full border border-neutral-800 border-dashed rounded-lg p-12 text-center">Affinity MCP Cloud is empty.</div>`;
+      if(scripts.length === 0) return container.innerHTML = `<div class="text-neutral-400 text-sm col-span-full border border-neutral-700 border-dashed rounded-lg p-12 text-center">Affinity MCP Cloud is empty.</div>`;
       
       container.innerHTML = '';
       scripts.forEach(title => {
@@ -382,7 +383,7 @@
     // --- Load Community Scripts ---
     async function loadCommunityScripts() {
       const container = document.getElementById('community-tiles');
-      container.innerHTML = '<div class="text-neutral-500 text-sm animate-pulse">Fetching community registry...</div>';
+      container.innerHTML = '<div class="text-neutral-400 text-sm animate-pulse">Fetching community registry...</div>';
       
       const res = await window.api.listCommunityScripts();
       if(!res.success) {
@@ -398,7 +399,7 @@
       const container = document.getElementById('community-tiles');
       
       if(scripts.length === 0) {
-        container.innerHTML = `<div class="text-neutral-500 text-sm col-span-full border border-neutral-800 border-dashed rounded-lg p-12 text-center">No scripts found.</div>`;
+        container.innerHTML = `<div class="text-neutral-400 text-sm col-span-full border border-neutral-700 border-dashed rounded-lg p-12 text-center">No scripts found.</div>`;
         return;
       }
 
@@ -408,7 +409,7 @@
         div.className = "group border border-neutral-800 rounded-xl p-6 flex flex-col bg-neutral-950 hover:border-neutral-500 transition shadow-sm h-full";
         div.innerHTML = `
           <div class="flex justify-between items-start mb-3">
-            <h4 class="font-bold text-neutral-300 group-hover:text-white transition-colors">${script.name}</h4>
+            <h4 class="font-bold text-neutral-200 group-hover:text-white transition-colors">${script.name}</h4>
             <span class="text-[10px] font-bold px-2 py-0.5 bg-neutral-800 text-neutral-400 rounded border border-neutral-700 whitespace-nowrap">v${script.version || '1.0.0'}</span>
           </div>
           <p class="text-sm text-neutral-400 mb-5 line-clamp-3 flex-grow leading-relaxed">${script.description}</p>
@@ -455,7 +456,7 @@
 
     // --- Load Docs ---
     async function loadDocumentation() {
-      document.getElementById('docs-loading').innerHTML = '<p class="text-neutral-500">Fetching docs from server...</p>';
+      document.getElementById('docs-loading').innerHTML = '<p class="text-neutral-400">Fetching docs from server...</p>';
       const res = await window.api.fetchDocs();
       if(res.success && res.data.length > 0) {
         docsLoaded = true;
