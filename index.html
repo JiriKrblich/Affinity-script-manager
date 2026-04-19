@@ -1,489 +1,141 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="scroll-smooth">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Affinity Script Manager</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-    .markdown-body h1 { font-size: 1.5rem; font-weight: 600; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.5rem; margin-top: 1.5rem; margin-bottom: 1rem; }
-    .markdown-body h2 { font-size: 1.25rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.75rem; }
-    .markdown-body p { margin-bottom: 1rem; color: #374151; line-height: 1.6; }
-    .markdown-body pre { background-color: #f3f4f6; padding: 1rem; border-radius: 0.375rem; border: 1px solid #e5e7eb; overflow-x: auto; margin-bottom: 1rem; }
-    .markdown-body code { font-family: Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace; font-size: 0.875rem; color: #ef4444; background: #fee2e2; padding: 0.1rem 0.3rem; border-radius: 0.25rem; }
-    .markdown-body pre code { color: #1f2937; background: transparent; padding: 0; }
-    .markdown-body a { color: #2563eb; text-decoration: underline; }
-    ::-webkit-scrollbar { width: 8px; height: 8px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
-    ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Script Manager - The Ultimate GUI for Affinity Scripts</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .gradient-text {
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+    </style>
 </head>
-<body class="bg-white text-gray-900 flex h-screen overflow-hidden antialiased select-none">
+<body class="bg-neutral-900 text-neutral-300 antialiased selection:bg-[#a7f175] selection:text-neutral-900">
 
-  <aside class="w-64 bg-gray-50 border-r border-gray-200 flex flex-col">
-    <div class="p-5 font-semibold text-lg text-gray-800 flex items-center gap-2">
-      <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
-      Script Manager
-    </div>
-    
-    <nav class="flex-1 overflow-y-auto py-2">
-      <ul class="space-y-1 px-3">
-        <li class="pt-2 pb-1"><div class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Library</div></li>
-        <li>
-          <button data-target="view-local" class="nav-btn w-full flex items-center gap-3 px-3 py-2 text-sm text-left rounded-md transition-colors bg-blue-100 text-blue-700 font-medium">
-            📂 My Local Scripts
-          </button>
-        </li>
-        <li>
-          <button data-target="view-mcp" class="nav-btn w-full flex items-center gap-3 px-3 py-2 text-sm text-left rounded-md transition-colors hover:bg-gray-100 text-gray-700">
-            ☁️ Affinity MCP
-          </button>
-        </li>
-
-        <li class="pt-6 pb-1"><div class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Discover</div></li>
-        <li>
-          <button data-target="view-community" class="nav-btn w-full flex items-center gap-3 px-3 py-2 text-sm text-left rounded-md transition-colors hover:bg-gray-100 text-gray-700">
-            🌍 Community Scripts
-          </button>
-        </li>
-
-        <li class="pt-6 pb-1"><div class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Support</div></li>
-        <li>
-          <button data-target="view-docs" id="tab-docs" class="nav-btn w-full flex items-center gap-3 px-3 py-2 text-sm text-left rounded-md transition-colors hover:bg-gray-100 text-gray-700">
-            📖 Documentation
-          </button>
-        </li>
-        <li>
-          <button data-target="view-search" class="nav-btn w-full flex items-center gap-3 px-3 py-2 text-sm text-left rounded-md transition-colors hover:bg-gray-100 text-gray-700">
-            🔍 Search SDK
-          </button>
-        </li>
-      </ul>
+    <nav class="container mx-auto px-6 py-6 flex justify-between items-center">
+        <div class="flex items-center">
+            <img src="logo.svg" alt="Affinity Script Manager Logo" class="h-7 md:h-8 w-auto">
+        </div>
+        <div>
+            <a href="https://github.com/JiriKrblich/Affinity-Script-Manager" target="_blank" class="text-sm font-medium text-neutral-400 hover:text-[#a7f175] transition-colors">View on GitHub</a>
+        </div>
     </nav>
 
-    <div class="p-4">
-      <button id="btn-open-upload" class="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded shadow-sm transition">
-        Upload Script
-      </button>
-    </div>
-  </aside>
-
-  <main class="flex-1 overflow-hidden flex flex-col bg-white">
-    
-    <div id="view-local" class="view flex flex-col h-full p-8 overflow-y-auto">
-      <div class="flex justify-between items-end mb-6">
-        <div>
-          <h2 class="text-2xl font-semibold text-gray-900">My Scripts</h2>
-          <p class="text-gray-500 text-sm mt-1">Scripts stored locally on your disk.</p>
+    <header class="container mx-auto px-6 pt-20 pb-16 text-center">
+        <h1 class="text-5xl md:text-7xl font-extrabold tracking-tight text-white mb-6">
+            Manage Affinity scripts <br class="hidden md:block">
+            <span class="bg-gradient-to-r from-[#a7f175] to-[#f4fce3] gradient-text">like a pro.</span>
+        </h1>
+        <p class="text-lg md:text-xl text-neutral-400 mb-12 max-w-2xl mx-auto leading-relaxed">
+            A native desktop GUI to organize your local scripts, push them instantly to the Affinity MCP server, and discover new tools from the community.
+        </p>
+        
+        <div class="flex flex-col sm:flex-row justify-center items-center gap-4 mb-16">
+            <a href="https://github.com/JiriKrblich/Affinity-script-manager/releases/latest" class="w-full sm:w-auto px-8 py-3.5 bg-[#a7f175] hover:bg-[#95e561] text-neutral-900 font-bold rounded-lg shadow-[0_0_20px_rgba(167,241,117,0.2)] hover:shadow-[0_0_30px_rgba(167,241,117,0.4)] transition-all flex items-center justify-center gap-2">
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.416 22 12c0-5.523-4.477-10-10-10z"/></svg>
+                Download for Mac
+            </a>
+            <a href="https://github.com/JiriKrblich/Affinity-script-manager/releases/latest" class="w-full sm:w-auto px-8 py-3.5 bg-neutral-800 border border-neutral-700 hover:border-[#a7f175] hover:text-[#a7f175] text-white font-medium rounded-lg shadow-sm transition-all flex items-center justify-center gap-2">
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.951-1.801"/></svg>
+                Download for Windows
+            </a>
         </div>
-      </div>
-      <div id="local-tiles" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
-    </div>
 
-    <div id="view-mcp" class="view hidden flex-col h-full p-8 overflow-y-auto">
-      <div class="flex justify-between items-end mb-6">
-        <div>
-          <h2 class="text-2xl font-semibold text-gray-900">Affinity MCP</h2>
-          <p class="text-gray-500 text-sm mt-1">Scripts available on the remote server.</p>
-        </div>
-      </div>
-      <div id="mcp-tiles" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
-    </div>
-
-    <div id="view-community" class="view hidden flex-col h-full p-8 overflow-y-auto bg-gray-50">
-      <div class="flex justify-between items-start mb-4">
-        <div>
-          <h2 class="text-2xl font-semibold text-gray-900">Community Scripts</h2>
-          <p class="text-gray-500 text-sm mt-1">Discover and install scripts made by the Affinity community.</p>
-        </div>
-        <div class="flex gap-2">
-          <button id="btn-contribute" class="text-sm px-4 py-2 bg-gray-900 text-white rounded hover:bg-gray-800 transition shadow-sm flex items-center gap-2">
-            <span>➕</span> Submit Script
-          </button>
-          <button id="btn-refresh-community" class="text-sm px-4 py-2 bg-white border border-gray-300 rounded hover:bg-gray-50 transition shadow-sm">Refresh</button>
-        </div>
-      </div>
-      
-      <div class="mb-6">
-        <input type="text" id="community-search" placeholder="Search scripts by name, description, or author..." class="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none shadow-sm">
-      </div>
-
-      <div id="community-tiles" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5"></div>
-    </div>
-
-    <div id="view-docs" class="view hidden h-full flex flex-row border-t border-gray-200">
-      <div id="docs-sidebar" class="w-64 bg-gray-50 border-r border-gray-200 overflow-y-auto hidden">
-        <ul id="docs-list" class="py-2"></ul>
-      </div>
-      <div id="docs-content" class="flex-1 p-8 overflow-y-auto markdown-body">
-        <div id="docs-loading" class="flex flex-col items-center justify-center h-full text-gray-500">
-          <p class="mb-4 text-lg">Fetching documentation from MCP...</p>
-        </div>
-      </div>
-    </div>
-
-    <div id="view-search" class="view hidden p-8 overflow-y-auto h-full">
-      <h2 class="text-2xl font-semibold text-gray-900 mb-6">Search SDK Hints</h2>
-      <div class="max-w-3xl">
-        <div class="flex gap-2 mb-6">
-          <input type="text" id="search-query" placeholder="E.g. how to handle authentication..." class="flex-1 border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
-          <button id="btn-search" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded shadow-sm transition">Search</button>
-        </div>
-        <div id="out-search" class="p-6 border border-gray-200 bg-gray-50 rounded text-gray-500 text-sm markdown-body min-h-[200px]">
-          Results will appear here.
-        </div>
-      </div>
-    </div>
-
-  </main>
-
-  <div id="modal-upload" class="fixed inset-0 z-50 hidden bg-black/40 flex items-center justify-center p-4">
-    <div class="bg-white rounded-lg w-full max-w-md shadow-xl overflow-hidden flex flex-col">
-      <div class="px-5 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-        <h3 class="font-semibold text-gray-900">Upload Script</h3>
-        <button class="close-modal text-gray-400 hover:text-gray-700">&times;</button>
-      </div>
-      <div class="p-5 space-y-4">
-        <p class="text-xs text-gray-500">This script will be saved locally and pushed to the MCP server.</p>
-        <button id="btn-select-file" class="w-full py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded text-sm font-medium transition">
-          Select .js File
-        </button>
-        <div>
-          <label class="block text-xs font-semibold text-gray-700 mb-1">Title</label>
-          <input type="text" id="up-title" class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
-        </div>
-        <div>
-          <label class="block text-xs font-semibold text-gray-700 mb-1">Description (Optional)</label>
-          <input type="text" id="up-desc" class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
-        </div>
-        <textarea id="up-code" class="hidden"></textarea>
-      </div>
-      <div class="px-5 py-3 border-t border-gray-200 bg-gray-50 flex justify-end gap-2">
-        <button class="close-modal px-4 py-2 text-gray-600 text-sm font-medium hover:bg-gray-200 rounded">Cancel</button>
-        <button id="btn-submit-upload" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded shadow-sm transition">Save Script</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="modal-download" class="fixed inset-0 z-50 hidden bg-black/40 flex items-center justify-center p-4">
-    <div class="bg-white rounded-lg w-full max-w-sm shadow-xl overflow-hidden flex flex-col">
-      <div class="px-5 py-4 border-b border-gray-200 bg-gray-50">
-        <h3 class="font-semibold text-gray-900">Download to Library</h3>
-      </div>
-      <div class="p-5">
-        <label class="block text-xs font-semibold text-gray-700 mb-1">Save as (Filename)</label>
-        <input type="text" id="dl-filename" class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
-        <input type="hidden" id="dl-mcp-target">
-      </div>
-      <div class="px-5 py-3 border-t border-gray-200 bg-gray-50 flex justify-end gap-2">
-        <button class="close-modal px-4 py-2 text-gray-600 text-sm font-medium hover:bg-gray-200 rounded">Cancel</button>
-        <button id="btn-submit-download" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded shadow-sm transition">Download</button>
-      </div>
-    </div>
-  </div>
-
-  <script>
-    const navBtns = document.querySelectorAll('.nav-btn');
-    const views = document.querySelectorAll('.view');
-    let docsLoaded = false;
-    let communityLoaded = false;
-    
-    let allCommunityScripts = [];
-
-    navBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        navBtns.forEach(b => {
-          b.classList.remove('bg-blue-100', 'text-blue-700', 'font-medium');
-          b.classList.add('hover:bg-gray-100', 'text-gray-700');
-        });
-        btn.classList.add('bg-blue-100', 'text-blue-700', 'font-medium');
-        btn.classList.remove('hover:bg-gray-100', 'text-gray-700');
-
-        const target = btn.getAttribute('data-target');
-        views.forEach(v => {
-          v.classList.add('hidden');
-          if (v.id === target) v.classList.remove('hidden');
-        });
-
-        // Automatické načítání při kliknutí na danou záložku
-        // Automatické načítání při kliknutí na danou záložku
-        if (target === 'view-local') loadLocalScripts();
-        if (target === 'view-mcp') loadMcpScripts();
-        if (target === 'view-docs' && !docsLoaded) loadDocumentation();
-        if (target === 'view-community') loadCommunityScripts(); // Nyní se načte POKAŽDÉ, když na záložku klikneš
-      });
-    });
-
-    const closeAllModals = () => document.querySelectorAll('.fixed.z-50').forEach(m => m.classList.add('hidden'));
-    document.querySelectorAll('.close-modal').forEach(b => b.onclick = closeAllModals);
-
-    document.getElementById('btn-open-upload').onclick = () => {
-      document.getElementById('up-title').value = '';
-      document.getElementById('up-desc').value = '';
-      document.getElementById('up-code').value = '';
-      document.getElementById('modal-upload').classList.remove('hidden');
-    };
-
-    document.getElementById('btn-select-file').onclick = async () => {
-      const res = await window.api.selectFile();
-      if (res.success) {
-        document.getElementById('up-title').value = res.data.name;
-        document.getElementById('up-code').value = res.data.code;
-        document.getElementById('up-desc').focus();
-      }
-    };
-
-    document.getElementById('btn-submit-upload').onclick = async () => {
-      const title = document.getElementById('up-title').value.trim();
-      const desc = document.getElementById('up-desc').value.trim();
-      const code = document.getElementById('up-code').value.trim();
-      if (!title || !code) return alert("Title and file code are required!");
-      
-      const btn = document.getElementById('btn-submit-upload');
-      btn.innerText = "Saving..."; btn.disabled = true;
-      
-      const res = await window.api.saveScript(title, desc, code);
-      btn.innerText = "Save Script"; btn.disabled = false;
-      
-      if (res.success) {
-        closeAllModals();
-        loadLocalScripts();
-        loadMcpScripts();
-      } else alert(res.error);
-    };
-
-    const openDownloadModal = (mcpTitle) => {
-      document.getElementById('dl-mcp-target').value = mcpTitle;
-      document.getElementById('dl-filename').value = mcpTitle.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
-      document.getElementById('modal-download').classList.remove('hidden');
-    };
-
-    document.getElementById('btn-submit-download').onclick = async () => {
-      const target = document.getElementById('dl-mcp-target').value;
-      const localName = document.getElementById('dl-filename').value.trim();
-      if(!localName) return;
-
-      const btn = document.getElementById('btn-submit-download');
-      btn.innerText = "Downloading..."; btn.disabled = true;
-
-      const res = await window.api.downloadFromMcp(target, localName);
-      btn.innerText = "Download"; btn.disabled = false;
-
-      if(res.success) {
-        closeAllModals();
-        loadLocalScripts();
-        document.querySelector('[data-target="view-local"]').click();
-      } else alert(res.error);
-    };
-
-    async function loadLocalScripts() {
-      const container = document.getElementById('local-tiles');
-      const res = await window.api.listLocalScripts();
-      if(!res.success) return container.innerHTML = `<div class="text-red-500 text-sm">Error: ${res.error}</div>`;
-      if(res.data.length === 0) return container.innerHTML = `<div class="text-gray-500 text-sm col-span-full">No local scripts.</div>`;
-      
-      container.innerHTML = '';
-      res.data.forEach(file => {
-        const div = document.createElement('div');
-        div.className = "border border-gray-200 rounded-lg p-4 flex flex-col bg-white shadow-sm hover:shadow transition";
-        div.innerHTML = `
-          <div class="flex items-center gap-2 mb-4">
-            <span class="text-blue-500">📄</span>
-            <span class="font-medium text-gray-900 break-all text-sm">${file}</span>
-          </div>
-          <div class="mt-auto flex flex-col gap-2">
-            <button class="btn-push w-full border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium text-xs py-1.5 rounded transition">
-              ⬆️ Push to Affinity
-            </button>
-            <div class="flex gap-2">
-              <button class="btn-export flex-1 border border-gray-300 hover:bg-gray-50 text-gray-700 text-xs py-1.5 rounded transition">Export...</button>
-              <button class="btn-del flex-1 border border-red-200 hover:bg-red-50 text-red-600 text-xs py-1.5 rounded transition">Delete</button>
+        <div class="relative max-w-5xl mx-auto rounded-xl shadow-[0_0_50px_rgba(0,0,0,0.6)] border border-neutral-700 overflow-hidden bg-neutral-950 aspect-video flex items-center justify-center">
+            <div class="text-neutral-500 flex flex-col items-center">
+                <img src="screenshot.png">
             </div>
-          </div>
-        `;
-        
-        div.querySelector('.btn-del').onclick = async () => {
-          if(confirm(`Delete ${file} from local library?`)) {
-            await window.api.deleteLocalScript(file);
-            loadLocalScripts();
-          }
-        };
-        div.querySelector('.btn-export').onclick = async () => window.api.exportToDisk(file);
-        div.querySelector('.btn-push').onclick = async () => {
-          const btn = div.querySelector('.btn-push');
-          btn.innerText = "Pushing..."; btn.disabled = true;
-          
-          const pushRes = await window.api.pushToMcp(file);
-          if(pushRes.success) {
-            btn.innerText = "✓ Pushed!";
-            btn.classList.replace('bg-blue-50', 'bg-green-50');
-            btn.classList.replace('text-blue-700', 'text-green-700');
-            btn.classList.replace('border-blue-200', 'border-green-200');
-            loadMcpScripts();
-            setTimeout(() => {
-              btn.innerText = "⬆️ Push to Affinity";
-              btn.classList.replace('bg-green-50', 'bg-blue-50');
-              btn.classList.replace('text-green-700', 'text-blue-700');
-              btn.classList.replace('border-green-200', 'border-blue-200');
-              btn.disabled = false;
-            }, 2000);
-          } else {
-            alert("Error pushing to cloud: " + pushRes.error);
-            btn.innerText = "⬆️ Push to Affinity"; 
-            btn.disabled = false;
-          }
-        };
-        container.appendChild(div);
-      });
-    }
+        </div>
+    </header>
 
-    async function loadMcpScripts() {
-      const container = document.getElementById('mcp-tiles');
-      const res = await window.api.listMcpScripts();
-      if(!res.success) return container.innerHTML = `<div class="text-red-500 text-sm">Error: ${res.error}</div>`;
-      
-      const safeData = typeof res.data === 'string' ? res.data : "";
-      const scripts = safeData.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
-      
-      if(scripts.length === 0) return container.innerHTML = `<div class="text-gray-500 text-sm col-span-full">Affinity MCP Cloud is empty.</div>`;
-      
-      container.innerHTML = '';
-      scripts.forEach(title => {
-        const div = document.createElement('div');
-        div.className = "border border-gray-200 rounded-lg p-4 flex flex-col bg-gray-50";
-        div.innerHTML = `
-          <div class="font-medium text-gray-900 mb-4 break-all text-sm">${title}</div>
-          <button class="mt-auto w-full bg-white border border-gray-300 hover:border-blue-400 hover:text-blue-600 text-gray-700 text-xs py-1.5 rounded transition shadow-sm">
-            Download to Library
-          </button>
-        `;
-        div.querySelector('button').onclick = () => openDownloadModal(title);
-        container.appendChild(div);
-      });
-    }
+    <section class="bg-neutral-950 py-24 border-t border-neutral-800">
+        <div class="container mx-auto px-6 text-center">
+            <span class="text-[#a7f175] font-semibold tracking-widest uppercase text-xs mb-3 block">New in v1.1.0</span>
+            <h2 class="text-3xl md:text-5xl font-extrabold mb-6 text-white">The Community Marketplace</h2>
+            <p class="text-neutral-400 max-w-2xl mx-auto mb-14 text-lg">
+                Discover tools built by other Affinity users or share your own creations. It's like a built-in App Store for your Affinity scripts.
+            </p>
 
-    async function loadCommunityScripts() {
-      const container = document.getElementById('community-tiles');
-      container.innerHTML = '<div class="text-gray-400 text-sm animate-pulse">Fetching community registry...</div>';
-      
-      const res = await window.api.listCommunityScripts();
-      if(!res.success) {
-        container.innerHTML = `<div class="text-red-500 text-sm p-4 bg-red-50 border border-red-100 rounded-md">Error: ${res.error}</div>`;
-        return;
-      }
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto text-left">
+                <div class="bg-neutral-900 p-8 rounded-2xl border border-neutral-800 hover:border-[#a7f175]/40 transition-colors">
+                    <h3 class="text-xl font-bold mb-3 flex items-center gap-3 text-white">
+                        <span class="flex items-center justify-center w-8 h-8 rounded bg-[#a7f175]/10 text-[#a7f175]">⬇️</span> 
+                        1-Click Installs
+                    </h3>
+                    <p class="text-neutral-400 text-sm leading-relaxed">Browse the registry, find a script you like, and hit install. The app downloads it and automatically pushes it to your Affinity server instantly.</p>
+                </div>
+                <div class="bg-neutral-900 p-8 rounded-2xl border border-neutral-800 hover:border-[#a7f175]/40 transition-colors">
+                    <h3 class="text-xl font-bold mb-3 flex items-center gap-3 text-white">
+                        <span class="flex items-center justify-center w-8 h-8 rounded bg-[#a7f175]/10 text-[#a7f175]">🤝</span> 
+                        Dead-Simple Sharing
+                    </h3>
+                    <p class="text-neutral-400 text-sm leading-relaxed">Got a script to share? You don't need to know Git. Just paste your code into our submission form directly from the app, and we'll add it to the directory.</p>
+                </div>
+            </div>
+        </div>
+    </section>
 
-      allCommunityScripts = res.data || [];
-      renderCommunityScripts(allCommunityScripts);
-    }
+<!--
+    <section class="bg-neutral-900 py-24 border-t border-neutral-800">
+        <div class="container mx-auto px-6 text-center">
+            <h2 class="text-3xl font-bold text-white mb-4">See it in action</h2>
+            <p class="text-neutral-400 mb-12">Watch how easy it is to manage and install scripts.</p>
+            
+            <div class="relative max-w-4xl mx-auto rounded-xl shadow-[0_0_40px_rgba(0,0,0,0.5)] border border-neutral-700 overflow-hidden bg-black aspect-video flex items-center justify-center">
+                <iframe 
+                    class="absolute inset-0 w-full h-full" 
+                    src="https://www.youtube.com/embed/YOUR_VIDEO_ID?rel=0" 
+                    title="Affinity Script Manager Demo" 
+                    frameborder="0" 
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                    allowfullscreen>
+                </iframe>
+            </div>
+        </div>
+    </section>
+    -->
 
-    function renderCommunityScripts(scripts) {
-      const container = document.getElementById('community-tiles');
-      
-      if(scripts.length === 0) {
-        container.innerHTML = `<div class="text-gray-500 text-sm col-span-full border-2 border-dashed border-gray-200 rounded-lg p-12 text-center">No scripts found.</div>`;
-        return;
-      }
+    <section class="bg-neutral-950 py-24 border-t border-neutral-800">
+        <div class="container mx-auto px-6">
+            <div class="text-center mb-16">
+                <h2 class="text-3xl font-bold text-white">Everything you need in one place</h2>
+                <p class="text-neutral-400 mt-3 text-lg">No more terminal commands or messy file folders.</p>
+            </div>
 
-      container.innerHTML = '';
-      scripts.forEach(script => {
-        const div = document.createElement('div');
-        div.className = "group border border-gray-200 rounded-lg p-5 flex flex-col bg-white hover:border-blue-400 transition shadow-sm h-full";
-        div.innerHTML = `
-          <div class="flex justify-between items-start mb-2">
-            <h4 class="font-bold text-gray-900 group-hover:text-blue-600 transition-colors">${script.name}</h4>
-            <span class="text-[10px] font-bold px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded whitespace-nowrap">v${script.version || '1.0.0'}</span>
-          </div>
-          <p class="text-xs text-gray-600 mb-4 line-clamp-3 flex-grow">${script.description}</p>
-          <div class="flex items-center justify-between mb-4 mt-auto">
-            <span class="text-[10px] text-gray-400">By <span class="font-medium">${script.author || 'Community'}</span></span>
-            ${script.category ? `<span class="text-[10px] text-blue-600 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded">${script.category}</span>` : ''}
-          </div>
-          <button class="btn-install w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium py-2 rounded transition shadow-sm mt-auto">
-            Install Script
-          </button>
-        `;
-        
-        div.querySelector('.btn-install').onclick = async () => {
-          const btn = div.querySelector('.btn-install');
-          const originalText = btn.innerText;
-          btn.innerText = "Installing..."; btn.disabled = true;
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+                <div class="p-8 border border-neutral-800 rounded-2xl bg-neutral-900 hover:border-[#a7f175]/50 transition-colors group">
+                    <div class="w-12 h-12 bg-neutral-800 text-[#a7f175] rounded-lg flex items-center justify-center mb-6 text-xl group-hover:scale-110 transition-transform">📂</div>
+                    <h3 class="text-xl font-bold text-white mb-3">Local Library</h3>
+                    <p class="text-sm text-neutral-400 leading-relaxed">Store and organize your custom scripts safely on your disk. Export, delete, or edit them directly from the UI.</p>
+                </div>
+                <div class="p-8 border border-neutral-800 rounded-2xl bg-neutral-900 hover:border-[#a7f175]/50 transition-colors group">
+                    <div class="w-12 h-12 bg-neutral-800 text-[#a7f175] rounded-lg flex items-center justify-center mb-6 text-xl group-hover:scale-110 transition-transform">⚡</div>
+                    <h3 class="text-xl font-bold text-white mb-3">1-Click MCP Push</h3>
+                    <p class="text-sm text-neutral-400 leading-relaxed">Push your local scripts directly to your active Affinity MCP Server with a single button. No manual copying needed.</p>
+                </div>
+                <div class="p-8 border border-neutral-800 rounded-2xl bg-neutral-900 hover:border-[#a7f175]/50 transition-colors group">
+                    <div class="w-12 h-12 bg-neutral-800 text-[#a7f175] rounded-lg flex items-center justify-center mb-6 text-xl group-hover:scale-110 transition-transform">📖</div>
+                    <h3 class="text-xl font-bold text-white mb-3">Built-in SDK Docs</h3>
+                    <p class="text-sm text-neutral-400 leading-relaxed">Fetch Affinity SDK documentation straight from the server and search through hints without leaving the app.</p>
+                </div>
+            </div>
+        </div>
+    </section>
 
-          const dlRes = await window.api.downloadCommunityScript(script.download_url, script.name);
-          if (dlRes.success) {
-            btn.innerText = "✓ Installed";
-            btn.className = "w-full bg-green-600 text-white text-xs font-medium py-2 rounded shadow-sm mt-auto transition";
-            loadLocalScripts();
-            loadMcpScripts();
-          } else {
-            alert("Error downloading: " + dlRes.error);
-            btn.innerText = originalText; btn.disabled = false;
-          }
-        };
-        container.appendChild(div);
-      });
-    }
+    <footer class="bg-neutral-900 py-12 border-t border-neutral-800">
+        <div class="container mx-auto px-6 flex flex-col md:flex-row justify-center items-center gap-4 text-sm text-neutral-500">
+            <div class="flex gap-6 font-medium">
+                <a href="https://github.com/JiriKrblich/Affinity-Script-Manager" class="hover:text-[#a7f175] transition-colors">App GitHub</a>
+                <a href="https://github.com/JiriKrblich/Affinity-Community-Scripts" class="hover:text-[#a7f175] transition-colors">Community Repo</a>
+                <a href="https://github.com/JiriKrblich/Affinity-Script-Manager/issues" class="hover:text-[#a7f175] transition-colors">Report a Bug</a>
+            </div>
+        </div>
+    </footer>
 
-    document.getElementById('community-search').addEventListener('input', (e) => {
-      const query = e.target.value.toLowerCase();
-      const filtered = allCommunityScripts.filter(s => 
-        (s.name && s.name.toLowerCase().includes(query)) ||
-        (s.description && s.description.toLowerCase().includes(query)) ||
-        (s.author && s.author.toLowerCase().includes(query))
-      );
-      renderCommunityScripts(filtered);
-    });
-
-    document.getElementById('btn-contribute').onclick = () => window.api.openExternalRepo();
-
-    async function loadDocumentation() {
-      document.getElementById('docs-loading').innerHTML = '<p class="text-gray-500">Fetching docs from server...</p>';
-      const res = await window.api.fetchDocs();
-      if(res.success && res.data.length > 0) {
-        docsLoaded = true;
-        document.getElementById('docs-sidebar').classList.remove('hidden');
-        document.getElementById('docs-sidebar').classList.add('block');
-        document.getElementById('docs-loading').classList.add('hidden');
-        const listEl = document.getElementById('docs-list');
-        const contentEl = document.getElementById('docs-content');
-        listEl.innerHTML = '';
-        res.data.forEach((doc, idx) => {
-          const li = document.createElement('li');
-          li.className = "px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-200 cursor-pointer border-b border-gray-100 truncate transition";
-          li.innerText = doc.title;
-          li.onclick = () => {
-            document.querySelectorAll('#docs-list li').forEach(el => el.classList.remove('bg-blue-100', 'text-blue-700', 'font-medium'));
-            li.classList.add('bg-blue-100', 'text-blue-700', 'font-medium');
-            contentEl.innerHTML = marked.parse(doc.content);
-          };
-          listEl.appendChild(li);
-          if(idx === 0) li.click();
-        });
-      } else {
-        document.getElementById('docs-loading').innerHTML = `<p class="text-red-500">Failed to load docs.</p>`;
-      }
-    }
-
-    document.getElementById('btn-search').onclick = async () => {
-      const q = document.getElementById('search-query').value.trim();
-      const out = document.getElementById('out-search');
-      if(!q) return;
-      out.innerHTML = '<span class="text-blue-600">Searching...</span>';
-      const res = await window.api.searchDocs(q);
-      if(res.success) out.innerHTML = marked.parse(res.data);
-      else out.innerHTML = `<span class="text-red-500">${res.error}</span>`;
-    };
-    document.getElementById('search-query').addEventListener('keypress', (e) => { if(e.key === 'Enter') document.getElementById('btn-search').click(); });
-
-    // Ponechán pouze refresh pro komunitu
-    document.getElementById('btn-refresh-community').onclick = loadCommunityScripts;
-
-    window.addEventListener('DOMContentLoaded', () => {
-      loadLocalScripts();
-      loadMcpScripts();
-    });
-  </script>
 </body>
 </html>
