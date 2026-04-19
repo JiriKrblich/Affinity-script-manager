@@ -113,8 +113,13 @@
           <button id="btn-contribute" class="text-sm px-5 py-2.5 bg-[#a7f175] hover:bg-[#95e561] text-neutral-900 font-bold rounded-lg transition shadow-sm flex items-center gap-2">
             <span>➕</span> Submit Script
           </button>
-          <button id="btn-refresh-community" class="text-sm px-5 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-white font-medium rounded-lg transition shadow-sm">
-            Refresh
+          
+          <button id="btn-refresh-community" class="p-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white rounded-lg transition shadow-sm" title="Refresh Scripts">
+            🔄
+          </button>
+
+          <button id="btn-open-settings" class="p-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white rounded-lg transition shadow-sm" title="Manage Repositories">
+            ⚙️
           </button>
         </div>
       </div>
@@ -202,13 +207,11 @@
     const views = document.querySelectorAll('.view');
     let docsLoaded = false;
     let communityLoaded = false;
-    
     let allCommunityScripts = [];
 
     // --- Navigation ---
     navBtns.forEach(btn => {
       btn.addEventListener('click', () => {
-        // Změna tříd při přepnutí záložek
         navBtns.forEach(b => {
           b.classList.remove('bg-[#a7f175]/10', 'text-[#a7f175]', 'font-medium');
           b.classList.add('hover:bg-neutral-900', 'text-neutral-300', 'hover:text-white');
@@ -244,8 +247,10 @@
     document.getElementById('btn-select-file').onclick = async () => {
       const res = await window.api.selectFile();
       if (res.success) {
-        document.getElementById('up-title').value = res.data.name;
-        document.getElementById('up-code').value = res.data.code;
+        // Tady se automaticky vyplní název a popisek podle hlavičky souboru
+        document.getElementById('up-title').value = res.data.name || '';
+        document.getElementById('up-desc').value = res.data.description || '';
+        document.getElementById('up-code').value = res.data.code || '';
         document.getElementById('up-desc').focus();
       }
     };
@@ -389,7 +394,7 @@
     // --- Load Community Scripts ---
     async function loadCommunityScripts() {
       const container = document.getElementById('community-tiles');
-      container.innerHTML = '<div class="text-neutral-400 text-sm animate-pulse">Fetching community registry...</div>';
+      container.innerHTML = '<div class="text-neutral-400 text-sm animate-pulse">Fetching community registries...</div>';
       
       const res = await window.api.listCommunityScripts();
       if(!res.success) {
@@ -405,7 +410,7 @@
       const container = document.getElementById('community-tiles');
       
       if(scripts.length === 0) {
-        container.innerHTML = `<div class="text-neutral-400 text-sm col-span-full border border-neutral-700 border-dashed rounded-lg p-12 text-center">No scripts found.</div>`;
+        container.innerHTML = `<div class="text-neutral-400 text-sm col-span-full border border-neutral-700 border-dashed rounded-lg p-12 text-center">No scripts found in any repository.</div>`;
         return;
       }
 
@@ -458,7 +463,10 @@
       renderCommunityScripts(filtered);
     });
 
-    document.getElementById('btn-contribute').onclick = () => window.api.openExternalRepo();
+    // PŘÍMÉ OTEVŘENÍ SPRÁVNÉ URL PRO NOVÉ ISSUE
+    document.getElementById('btn-contribute').onclick = () => {
+      window.api.openUrl('https://github.com/JiriKrblich/Affinity-Community-Scripts/issues/new');
+    };
 
     // --- Load Docs ---
     async function loadDocumentation() {
@@ -505,7 +513,19 @@
 
     document.getElementById('btn-refresh-community').onclick = loadCommunityScripts;
 
-    // --- Zachycení Update události z main.js ---
+    // --- Otevření Settings Okna ---
+    document.getElementById('btn-open-settings').onclick = () => {
+      window.api.openSettings();
+    };
+
+    // Pokud přidáme/smažeme repo v okně nastavení, aktualizuje se nám komunita
+    window.api.onReposChanged(() => {
+      if (document.getElementById('view-community').classList.contains('hidden') === false) {
+        loadCommunityScripts();
+      }
+    });
+
+    // --- Update ---
     let pendingUpdateUrl = "";
     window.api.onUpdateAvailable((url, version) => {
       pendingUpdateUrl = url;
