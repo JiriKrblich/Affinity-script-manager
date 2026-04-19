@@ -20,5 +20,17 @@ contextBridge.exposeInMainWorld('api', {
 
   // --- Dokumentace a Hledání ---
   fetchDocs: () => ipcRenderer.invoke('fetch-docs'),
-  searchDocs: (query) => ipcRenderer.invoke('search-docs', query)
+  searchDocs: (query) => ipcRenderer.invoke('search-docs', query),
+
+  // --- Nastavení a repozitáře ---
+  openSettings: () => ipcRenderer.send('open-settings'), // NOVÉ
+  getRepos: () => ipcRenderer.invoke('get-repos'),
+  addRepo: (url) => ipcRenderer.invoke('add-repo', url),
+  removeRepo: (url) => ipcRenderer.invoke('remove-repo', url),
+  onReposChanged: (callback) => ipcRenderer.on('repos-changed', callback), // NOVÉ
+
+  // --- Systémové (Aktualizace) ---
+  checkUpdates: () => ipcRenderer.invoke('check-updates'),
+  onUpdateAvailable: (callback) => ipcRenderer.on('update-available', (event, url, version) => callback(url, version)),
+  openUrl: (url) => ipcRenderer.send('open-url', url)
 });

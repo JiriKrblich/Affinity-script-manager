@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings - Repositories</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #525252; border-radius: 4px; }
+  </style>
+</head>
+<body class="bg-neutral-900 text-neutral-200 h-screen flex flex-col antialiased select-none selection:bg-[#a7f175] selection:text-neutral-900">
+
+  <div class="px-6 py-4 border-b border-neutral-800 bg-neutral-950 flex items-center gap-3">
+    <span class="text-xl">⚙️</span>
+    <h1 class="font-bold text-white text-lg">Community Repositories</h1>
+  </div>
+
+  <div class="p-6 flex-1 overflow-y-auto">
+    <p class="text-sm text-neutral-400 mb-6">
+      Add a standard GitHub repository link (e.g. <code>https://github.com/user/repo</code>) to discover more scripts.
+    </p>
+    
+    <div class="flex gap-2 mb-8">
+      <input type="text" id="new-repo-url" placeholder="https://github.com/user/repository" class="flex-1 bg-neutral-950 border border-neutral-700 text-white rounded-lg px-4 py-2.5 text-sm focus:border-[#a7f175] focus:ring-1 focus:ring-[#a7f175] focus:outline-none placeholder-neutral-600 transition">
+      <button id="btn-add-repo" class="px-5 py-2.5 bg-[#a7f175] hover:bg-[#95e561] text-neutral-900 font-bold text-sm rounded-lg transition shadow-sm">Add Repo</button>
+    </div>
+
+    <h2 class="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-3">Active Repositories</h2>
+    <ul id="repo-list" class="space-y-3">
+      </ul>
+  </div>
+
+  <script>
+    const DEFAULT_REPO = 'https://raw.githubusercontent.com/JiriKrblich/Affinity-Community-Scripts/refs/heads/main/registry.json';
+
+    // Pomocná funkce pro získání "uživatel/repo" ze syrové URL
+    function getDisplayName(url) {
+      const match = url.match(/raw\.githubusercontent\.com\/([^\/]+\/[^\/]+)/);
+      return match ? match[1] : url;
+    }
+
+    const loadRepos = async () => {
+      const res = await window.api.getRepos();
+      const list = document.getElementById('repo-list');
+      list.innerHTML = '';
+      
+      if (res.success) {
+        res.data.forEach(url => {
+          const li = document.createElement('li');
+          li.className = "flex justify-between items-center bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-3 gap-3 hover:border-neutral-600 transition-colors";
+          
+          const displayName = getDisplayName(url);
+          const isDefault = url === DEFAULT_REPO;
+          
+          li.innerHTML = `
+            <div class="flex items-center gap-3 overflow-hidden">
+              <span class="text-neutral-500">📦</span>
+              <span class="text-sm font-medium text-neutral-200 truncate" title="${url}">${displayName}</span>
+            </div>
+            ${isDefault 
+              ? `<span class="text-[10px] font-bold px-2 py-1 bg-neutral-800 text-neutral-400 rounded border border-neutral-700 uppercase tracking-wide">Default</span>` 
+              : `<button class="btn-del-repo text-red-400 hover:text-red-300 text-xs font-bold px-3 py-1.5 rounded bg-red-900/20 hover:bg-red-900/40 transition">Remove</button>`
+            }
+          `;
+          
+          if (!isDefault) {
+            li.querySelector('.btn-del-repo').onclick = async () => {
+              if(confirm(`Remove repository ${displayName}?`)) {
+                await window.api.removeRepo(url);
+                loadRepos();
+              }
+            };
+          }
+          list.appendChild(li);
+        });
+      }
+    };
+
+    document.getElementById('btn-add-repo').onclick = async () => {
+      const input = document.getElementById('new-repo-url');
+      const url = input.value.trim();
+      if (!url) return;
+      
+      const btn = document.getElementById('btn-add-repo');
+      btn.innerText = "Adding..."; btn.disabled = true;
+
+      const res = await window.api.addRepo(url);
+      if (res.success) {
+        input.value = '';
+        loadRepos();
+      } else {
+        alert(res.error);
+      }
+      
+      btn.innerText = "Add Repo"; btn.disabled = false;
+    };
+
+    window.addEventListener('DOMContentLoaded', loadRepos);
+  </script>
+</body>
+</html>
