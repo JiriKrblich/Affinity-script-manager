@@ -20,7 +20,8 @@ ElectronJS based UI manager for Affinity App scripts
 
 ## ✅ Roadmap
 - [ ] Standard format of Scripts – Autofill info about script into UI
-- [ ] Update manager of App – App autoupdate
-- [ ] Updating existing scripts from the git repo
+- [ ] Update manager of App –> App autoupdate
+- [ ] Updating existing scripts from the git community repo
+- [ ] Custom git repos
 - [ ] Better UI
 - [ ] App branding
