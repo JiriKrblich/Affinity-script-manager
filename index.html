@@ -65,6 +65,12 @@
             🔍 Search SDK
           </button>
         </li>
+        
+        <li id="menu-item-update" class="mt-4 hidden">
+          <button id="btn-perform-update" class="w-full flex items-center gap-3 px-3 py-2 text-sm text-left rounded-md transition-colors bg-[#a7f175]/10 border border-[#a7f175]/30 text-[#a7f175] font-bold hover:bg-[#a7f175]/20 shadow-sm">
+            🎁 Update Available
+          </button>
+        </li>
       </ul>
     </nav>
 
@@ -498,6 +504,21 @@
     document.getElementById('search-query').addEventListener('keypress', (e) => { if(e.key === 'Enter') document.getElementById('btn-search').click(); });
 
     document.getElementById('btn-refresh-community').onclick = loadCommunityScripts;
+
+    // --- Zachycení Update události z main.js ---
+    let pendingUpdateUrl = "";
+    window.api.onUpdateAvailable((url, version) => {
+      pendingUpdateUrl = url;
+      const btn = document.getElementById('btn-perform-update');
+      btn.innerHTML = `🎁 Update to v${version}`;
+      document.getElementById('menu-item-update').classList.remove('hidden');
+    });
+
+    document.getElementById('btn-perform-update').onclick = () => {
+      if (pendingUpdateUrl) {
+        window.api.openUrl(pendingUpdateUrl);
+      }
+    };
 
     window.addEventListener('DOMContentLoaded', () => {
       loadLocalScripts();

@@ -141,10 +141,8 @@ app.whenReady().then(async () => {
       const code = await response.text();
       const safeName = filename.toLowerCase().replace(/[^a-z0-9_-]/g, '-') + '.js';
       
-      // 1. Uložíme lokálně
       await fs.writeFile(path.join(localScriptsDir, safeName), code, "utf8");
       
-      // 2. Automatický push do Affinity MCP Serveru
       try {
         await callTool(client, "save_script_to_library", { 
           title: filename, 
@@ -161,6 +159,10 @@ app.whenReady().then(async () => {
 
   ipcMain.on('open-external-repo', () => {
     shell.openExternal('https://github.com/JiriKrblich/Affinity-Community-Scripts/issues/new');
+  });
+
+  ipcMain.on('open-url', (event, url) => {
+    shell.openExternal(url);
   });
 
   // ==========================================
@@ -187,6 +189,55 @@ app.whenReady().then(async () => {
       const result = await callTool(client, "search_sdk_hints", { prompt: query });
       return { success: true, data: getTextContent(result) || JSON.stringify(result, null, 2) };
     } catch (error) { return { success: false, error: error.message }; }
+  });
+
+  // ==========================================
+  // --- GITHUB UPDATE CHECK ---
+  // ==========================================
+  win.webContents.once('did-finish-load', async () => {
+    try {
+      const REPO_OWNER = 'JiriKrblich'; 
+      const REPO_NAME = 'Affinity-Script-Manager';
+      const currentVersion = app.getVersion(); 
+      
+      const response = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`);
+      if (!response.ok) return;
+      
+      const release = await response.json();
+      const latestVersion = release.tag_name.replace('v', ''); 
+
+      const v1 = latestVersion.split('.').map(Number);
+      const v2 = currentVersion.split('.').map(Number);
+      let isNewer = false;
+      
+      for (let i = 0; i < 3; i++) {
+        if ((v1[i] || 0) > (v2[i] || 0)) { isNewer = true; break; }
+        if ((v1[i] || 0) < (v2[i] || 0)) { break; }
+      }
+
+      if (isNewer) {
+        // Nejprve pošleme signál do UI, aby se ukázalo tlačítko v menu (pro případ, že uživatel dá 'Later')
+        win.webContents.send('update-available', release.html_url, latestVersion);
+
+        // Pak ukážeme popup okno
+        const { response: btnIndex } = await dialog.showMessageBox(win, {
+          type: 'info',
+          title: 'Update Available',
+          message: `A new version of Affinity Script Manager (v${latestVersion}) is available!`,
+          detail: 'Would you like to download it now?',
+          buttons: ['Update', 'Later'],
+          defaultId: 0,
+          cancelId: 1
+        });
+
+        // Pokud uživatel vybral Update
+        if (btnIndex === 0) {
+          shell.openExternal(release.html_url);
+        }
+      }
+    } catch (error) {
+      console.log("Update check failed (offline or API limit):", error.message);
+    }
   });
 
   win.loadFile('index.html');

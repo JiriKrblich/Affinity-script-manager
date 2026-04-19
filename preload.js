@@ -20,5 +20,9 @@ contextBridge.exposeInMainWorld('api', {
 
   // --- Dokumentace a Hledání ---
   fetchDocs: () => ipcRenderer.invoke('fetch-docs'),
-  searchDocs: (query) => ipcRenderer.invoke('search-docs', query)
+  searchDocs: (query) => ipcRenderer.invoke('search-docs', query),
+
+  // --- Systémové (Aktualizace) ---
+  onUpdateAvailable: (callback) => ipcRenderer.on('update-available', (event, url, version) => callback(url, version)),
+  openUrl: (url) => ipcRenderer.send('open-url', url)
 });
