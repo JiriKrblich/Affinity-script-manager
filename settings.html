@@ -1,105 +1,79 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Settings - Repositories</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-    ::-webkit-scrollbar { width: 8px; height: 8px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #525252; border-radius: 4px; }
-  </style>
+<meta charset="UTF-8">
+<title>Settings · Repositories</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<style>
+  html, body { overflow: auto; }
+  body { padding: 32px 36px; }
+  .repo-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border: 1px solid var(--border); background: var(--bg-card); margin-bottom: 8px; }
+  .repo-row .name { font-size: 13px; color: var(--text-strong); }
+  .repo-row .kind { font: 400 10px/1 var(--f-mono); color: var(--text-faint); text-transform: uppercase; letter-spacing: 1px; }
+  .add { display: flex; gap: 8px; margin-bottom: 24px; }
+  .add input { flex: 1; background: var(--bg-card); border: 1px solid var(--border-dim); color: var(--text-strong); padding: 10px 12px; font: 400 13px/1 var(--f-sans); }
+  .add input:focus { border-color: var(--accent); outline: none; }
+  h1.page-title { font: 600 28px/1.2 var(--f-sans); letter-spacing: -0.6px; color: var(--text-strong); margin: 10px 0 8px; }
+</style>
 </head>
-<body class="bg-neutral-900 text-neutral-200 h-screen flex flex-col antialiased select-none selection:bg-[#a7f175] selection:text-neutral-900">
+<body>
+  <div class="eyebrow">Settings</div>
+  <h1 class="page-title">Community Repositories</h1>
+  <p class="subhead" style="font-size:12px; color:var(--text); margin-bottom:24px;">Paste a GitHub URL (<span style="font-family:var(--f-mono); color:var(--text-strong);">https://github.com/user/repo</span>) to discover more scripts.</p>
 
-  <div class="px-6 py-4 border-b border-neutral-800 bg-neutral-950 flex items-center gap-3">
-    <span class="text-xl">⚙️</span>
-    <h1 class="font-bold text-white text-lg">Community Repositories</h1>
+  <div class="add">
+    <input type="text" id="new-repo-url" placeholder="https://github.com/user/repository">
+    <button class="accent-btn" id="btn-add-repo">Add</button>
   </div>
 
-  <div class="p-6 flex-1 overflow-y-auto">
-    <p class="text-sm text-neutral-400 mb-6">
-      Add a standard GitHub repository link (e.g. <code>https://github.com/user/repo</code>) to discover more scripts.
-    </p>
-    
-    <div class="flex gap-2 mb-8">
-      <input type="text" id="new-repo-url" placeholder="https://github.com/user/repository" class="flex-1 bg-neutral-950 border border-neutral-700 text-white rounded-lg px-4 py-2.5 text-sm focus:border-[#a7f175] focus:ring-1 focus:ring-[#a7f175] focus:outline-none placeholder-neutral-600 transition">
-      <button id="btn-add-repo" class="px-5 py-2.5 bg-[#a7f175] hover:bg-[#95e561] text-neutral-900 font-bold text-sm rounded-lg transition shadow-sm">Add Repo</button>
-    </div>
+  <div class="eyebrow" style="margin-bottom:12px;">Active repositories</div>
+  <div id="repo-list"></div>
 
-    <h2 class="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-3">Active Repositories</h2>
-    <ul id="repo-list" class="space-y-3">
-      </ul>
-  </div>
+<script>
+const DEFAULT_REPO = 'https://raw.githubusercontent.com/JiriKrblich/Affinity-Community-Scripts/refs/heads/main/registry.json';
+function getDisplayName(url) {
+  const m = url.match(/raw\.githubusercontent\.com\/([^\/]+\/[^\/]+)/);
+  return m ? m[1] : url;
+}
 
-  <script>
-    const DEFAULT_REPO = 'https://raw.githubusercontent.com/JiriKrblich/Affinity-Community-Scripts/refs/heads/main/registry.json';
-
-    // Pomocná funkce pro získání "uživatel/repo" ze syrové URL
-    function getDisplayName(url) {
-      const match = url.match(/raw\.githubusercontent\.com\/([^\/]+\/[^\/]+)/);
-      return match ? match[1] : url;
+async function load() {
+  const res = await window.api.getRepos();
+  const list = document.getElementById('repo-list'); list.innerHTML = '';
+  if (!res.success) return;
+  res.data.forEach(url => {
+    const row = document.createElement('div'); row.className = 'repo-row';
+    const displayName = getDisplayName(url);
+    const isDefault = url === DEFAULT_REPO;
+    row.innerHTML = `<div><div class="name">${displayName}</div></div>` +
+      (isDefault ? `<span class="kind">Default</span>` : `<button class="gh-btn compact danger">Remove</button>`);
+    if (!isDefault) {
+      row.querySelector('button').onclick = async () => {
+        if (!confirm(`Remove ${displayName}?`)) return;
+        await window.api.removeRepo(url);
+        load();
+      };
     }
+    list.appendChild(row);
+  });
+}
 
-    const loadRepos = async () => {
-      const res = await window.api.getRepos();
-      const list = document.getElementById('repo-list');
-      list.innerHTML = '';
-      
-      if (res.success) {
-        res.data.forEach(url => {
-          const li = document.createElement('li');
-          li.className = "flex justify-between items-center bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-3 gap-3 hover:border-neutral-600 transition-colors";
-          
-          const displayName = getDisplayName(url);
-          const isDefault = url === DEFAULT_REPO;
-          
-          li.innerHTML = `
-            <div class="flex items-center gap-3 overflow-hidden">
-              <span class="text-neutral-500">📦</span>
-              <span class="text-sm font-medium text-neutral-200 truncate" title="${url}">${displayName}</span>
-            </div>
-            ${isDefault 
-              ? `<span class="text-[10px] font-bold px-2 py-1 bg-neutral-800 text-neutral-400 rounded border border-neutral-700 uppercase tracking-wide">Default</span>` 
-              : `<button class="btn-del-repo text-red-400 hover:text-red-300 text-xs font-bold px-3 py-1.5 rounded bg-red-900/20 hover:bg-red-900/40 transition">Remove</button>`
-            }
-          `;
-          
-          if (!isDefault) {
-            li.querySelector('.btn-del-repo').onclick = async () => {
-              if(confirm(`Remove repository ${displayName}?`)) {
-                await window.api.removeRepo(url);
-                loadRepos();
-              }
-            };
-          }
-          list.appendChild(li);
-        });
-      }
-    };
+document.getElementById('btn-add-repo').onclick = async () => {
+  const inp = document.getElementById('new-repo-url');
+  const url = inp.value.trim();
+  if (!url) return;
+  const r = await window.api.addRepo(url);
+  if (!r.success) { alert(r.error); return; }
+  inp.value = ''; load();
+};
 
-    document.getElementById('btn-add-repo').onclick = async () => {
-      const input = document.getElementById('new-repo-url');
-      const url = input.value.trim();
-      if (!url) return;
-      
-      const btn = document.getElementById('btn-add-repo');
-      btn.innerText = "Adding..."; btn.disabled = true;
+document.getElementById('new-repo-url').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('btn-add-repo').click();
+});
 
-      const res = await window.api.addRepo(url);
-      if (res.success) {
-        input.value = '';
-        loadRepos();
-      } else {
-        alert(res.error);
-      }
-      
-      btn.innerText = "Add Repo"; btn.disabled = false;
-    };
-
-    window.addEventListener('DOMContentLoaded', loadRepos);
-  </script>
+window.addEventListener('DOMContentLoaded', load);
+</script>
 </body>
 </html>

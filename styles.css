@@ -256,3 +256,15 @@ button, input, select, textarea, .card, .modal, .tag, .gh-btn, .accent-btn { bor
 .doc-reader pre code { background: transparent; padding: 0; color: inherit; }
 .doc-reader a  { color: var(--accent); text-decoration: underline; }
 .doc-reader ul, .doc-reader ol { color: var(--text); font-size: 13px; line-height: 1.7; padding-left: 22px; }
+
+/* ---------- Modals ---------- */
+.modal-backdrop { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; padding: 24px; }
+.modal { background: var(--bg-chrome); border: 1px solid var(--border); width: 100%; max-width: 460px; display: flex; flex-direction: column; box-shadow: 0 16px 48px rgba(0,0,0,.5); }
+.modal-head { padding: 18px 24px; border-bottom: 1px solid var(--hair); display: flex; justify-content: space-between; align-items: center; }
+.modal-head h3 { font: 600 14px/1 var(--f-sans); color: var(--text-strong); margin: 0; }
+.modal-body { padding: 22px 24px; display: flex; flex-direction: column; gap: 16px; }
+.modal-body label { display: block; font: 500 11px/1 var(--f-mono); color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+.modal-body input[type=text] { width: 100%; background: var(--bg-card); border: 1px solid var(--border-dim); color: var(--text-strong); font: 400 13px/1 var(--f-sans); padding: 10px 12px; }
+.modal-body input[type=text]:focus { border-color: var(--accent); outline: none; }
+.modal-body p { margin: 0; font-size: 12px; color: var(--text); line-height: 1.5; }
+.modal-foot { padding: 16px 24px; border-top: 1px solid var(--hair); display: flex; justify-content: flex-end; gap: 10px; }

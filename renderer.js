@@ -522,3 +522,83 @@ async function renderSdk(root) {
     }
   });
 }
+
+// ---------- Upload / Download modals ----------
+function openUploadModal() {
+  const bd = document.createElement('div'); bd.className = 'modal-backdrop';
+  bd.innerHTML = `
+    <div class="modal">
+      <div class="modal-head">
+        <h3>Upload Script</h3>
+        <button class="icon-btn" id="m-close"></button>
+      </div>
+      <div class="modal-body">
+        <p>Saves locally and pushes to the bridge.</p>
+        <button class="gh-btn" id="m-pick" style="width:100%">Select .js File</button>
+        <div><label>Title</label><input id="m-title" type="text"></div>
+        <div><label>Description (optional)</label><input id="m-desc" type="text"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="gh-btn" id="m-cancel">Cancel</button>
+        <button class="accent-btn" id="m-save">Save Script</button>
+      </div>
+    </div>`;
+  bd.querySelector('#m-close').appendChild(Ico('close', { size: 12 }));
+  document.body.appendChild(bd);
+
+  const close = () => bd.remove();
+  bd.querySelector('#m-close').onclick  = close;
+  bd.querySelector('#m-cancel').onclick = close;
+  bd.addEventListener('click', (e) => { if (e.target === bd) close(); });
+
+  let code = '';
+  bd.querySelector('#m-pick').onclick = async () => {
+    const r = await window.api.selectFile();
+    if (r && r.success) {
+      bd.querySelector('#m-title').value = r.data.name || '';
+      bd.querySelector('#m-desc').value  = r.data.description || '';
+      code = r.data.code || '';
+    }
+  };
+  bd.querySelector('#m-save').onclick = async () => {
+    const title = bd.querySelector('#m-title').value.trim();
+    const desc  = bd.querySelector('#m-desc').value.trim();
+    if (!title || !code) { alert('Title and a .js file are required.'); return; }
+    const btn = bd.querySelector('#m-save');
+    btn.textContent = 'Saving…'; btn.disabled = true;
+    const r = await window.api.saveScript(title, desc, code);
+    if (!r || !r.success) { alert((r && r.error) || 'Save failed'); btn.textContent = 'Save Script'; btn.disabled = false; return; }
+    close();
+    if (state.nav === 'local') renderScreen();
+  };
+}
+
+function openDownloadModal(title) {
+  const bd = document.createElement('div'); bd.className = 'modal-backdrop';
+  const safe = title.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+  bd.innerHTML = `
+    <div class="modal" style="max-width:400px">
+      <div class="modal-head"><h3>Download to Library</h3></div>
+      <div class="modal-body"><div><label>Save as</label><input id="m-name" type="text" value="${escapeHtml(safe)}"></div></div>
+      <div class="modal-foot">
+        <button class="gh-btn" id="m-cancel">Cancel</button>
+        <button class="accent-btn" id="m-ok">Download</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bd);
+
+  const close = () => bd.remove();
+  bd.querySelector('#m-cancel').onclick = close;
+  bd.addEventListener('click', (e) => { if (e.target === bd) close(); });
+
+  bd.querySelector('#m-ok').onclick = async () => {
+    const name = bd.querySelector('#m-name').value.trim();
+    if (!name) return;
+    const btn = bd.querySelector('#m-ok');
+    btn.textContent = 'Downloading…'; btn.disabled = true;
+    const r = await window.api.downloadFromMcp(title, name);
+    if (!r || !r.success) { alert((r && r.error) || 'Download failed'); btn.textContent = 'Download'; btn.disabled = false; return; }
+    close();
+    state.nav = 'local'; renderNav(); renderScreen();
+  };
+}
