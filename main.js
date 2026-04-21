@@ -81,8 +81,27 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('list-local-scripts', async () => {
     try {
-      const files = await fs.readdir(localScriptsDir);
-      return { success: true, data: files.filter(f => f.endsWith('.js')) };
+      const files = (await fs.readdir(localScriptsDir)).filter(f => f.endsWith('.js'));
+      const out = [];
+      for (const file of files) {
+        const full = path.join(localScriptsDir, file);
+        const stat = await fs.stat(full);
+        let name = path.parse(file).name;
+        let description = '';
+        let version = '';
+        try {
+          const head = (await fs.readFile(full, 'utf8')).slice(0, 4096);
+          const m = head.match(/^\s*\/\*\*([\s\S]*?)\*\//);
+          if (m) {
+            const h = m[1];
+            const n = h.match(/name:\s*(.+)/i);         if (n) name = n[1].trim();
+            const d = h.match(/description:\s*(.+)/i);   if (d) description = d[1].trim();
+            const v = h.match(/version:\s*(.+)/i);       if (v) version = v[1].trim();
+          }
+        } catch {}
+        out.push({ file, name, description, version, size: stat.size, modified: stat.mtimeMs });
+      }
+      return { success: true, data: out };
     } catch (e) { return { success: false, error: e.message }; }
   });
 
