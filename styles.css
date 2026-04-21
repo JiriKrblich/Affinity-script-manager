@@ -227,9 +227,7 @@ button, input, select, textarea, .card, .modal, .tag, .gh-btn, .accent-btn { bor
 .community-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
 .c-card { position: relative; background: var(--bg-card); border: 1px solid var(--border); padding: 22px; display: flex; flex-direction: column; transition: border-color .12s; }
 .c-card:hover { border-color: var(--border-hi); }
-.c-card.featured { background: var(--bg-card-hi); }
-.c-card.featured::before { content: ""; position: absolute; top: -1px; left: -1px; right: -1px; height: 2px; background: var(--accent); }
-.c-card .featured-eyebrow { position: absolute; top: -22px; left: 0; }
+
 .c-card .top-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 4px; }
 .c-card h3 { font: 600 16px/1.2 var(--f-sans); color: var(--text-strong); letter-spacing: -0.3px; margin: 0; }
 .c-card .author { font: 400 11px/1 var(--f-mono); color: var(--text-dim); margin-bottom: 14px; }

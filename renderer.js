@@ -60,6 +60,7 @@ function navigate(id) {
 async function renderScreen() {
   const main = document.getElementById('main');
   main.innerHTML = '';
+  main.scrollTop = 0;
   const dispatch = { local: renderLocal, bridge: renderBridge, community: renderCommunity, docs: renderDocs, sdk: renderSdk };
   const fn = dispatch[state.nav] || renderLocal;
   await fn(main);
@@ -333,7 +334,7 @@ async function renderCommunity(root) {
   root.appendChild(screen);
 
   screen.querySelector('#ico-src').appendChild(Ico('github', { size: 12 }));
-  screen.querySelector('#ico-gear').appendChild(Ico('gear', { size: 12 }));
+  screen.querySelector('#ico-gear').appendChild(Ico('gear', { size: 13, sw: 1.4 }));
   screen.querySelector('#ico-plus').appendChild(Ico('plus', { size: 12, sw: 1.8 }));
   screen.querySelector('#c-search-icon').appendChild(Ico('search', { size: 13 }));
 
@@ -397,13 +398,11 @@ async function renderCommunity(root) {
       return;
     }
 
-    filtered.forEach((s, i) => {
+    filtered.forEach((s) => {
       const installed = state.installedIds.has(s.download_url);
-      const isFeatured = (i === 0 && !q && state.communityFilter === 'all');
       const card = document.createElement('div');
-      card.className = 'c-card' + (isFeatured ? ' featured' : '');
+      card.className = 'c-card';
       const cardHtml = [];
-      if (isFeatured) cardHtml.push('<div class="eyebrow accent featured-eyebrow">Featured</div>');
       cardHtml.push(`
         <div class="top-row">
           <h3>${escapeHtml(s.name || '(untitled)')}</h3>
@@ -485,7 +484,9 @@ async function renderDocs(root) {
 }
 
 function openDocReader(doc) {
-  const main = document.getElementById('main'); main.innerHTML = '';
+  const main = document.getElementById('main');
+  main.innerHTML = '';
+  main.scrollTop = 0;
   const reader = document.createElement('div'); reader.className = 'doc-reader';
   const back = document.createElement('button'); back.className = 'gh-btn compact'; back.style.marginBottom = '20px';
   back.textContent = '← Back to Documentation';
@@ -529,18 +530,41 @@ async function renderSdk(root) {
     const q = input.value.trim();
     if (!q) return;
     out.className = '';
-    out.style = '';
+    out.removeAttribute('style');
+    out.style.minHeight = '120px';
+    out.style.color = 'var(--text-faint)';
+    out.style.fontSize = '12px';
     out.innerHTML = '<div class="eyebrow accent">searching…</div>';
 
-    const r = await window.api.searchDocs(q);
-    if (r.success) {
-      out.className = 'doc-reader';
-      out.style.cssText = 'padding: 24px; border: 1px solid var(--hair); background: var(--bg-card);';
-      out.innerHTML = (window.marked ? window.marked.parse(r.data || '') : escapeHtml(r.data || ''));
-    } else {
-      out.style.cssText = 'color: var(--danger-text); font-size: 12px;';
-      out.textContent = r.error || 'Search failed';
+    let r;
+    try {
+      r = await window.api.searchDocs(q);
+    } catch (err) {
+      out.removeAttribute('style');
+      out.style.cssText = 'color: var(--danger-text); font-size: 12px; padding: 16px; border: 1px solid var(--danger-border); background: var(--danger-bg);';
+      out.textContent = 'IPC error: ' + (err && err.message ? err.message : String(err));
+      return;
     }
+
+    if (!r || !r.success) {
+      out.removeAttribute('style');
+      out.style.cssText = 'color: var(--danger-text); font-size: 12px; padding: 16px; border: 1px solid var(--danger-border); background: var(--danger-bg);';
+      out.textContent = (r && r.error) || 'Search failed with no error message — the MCP bridge may be offline. Check the Server Bridge screen.';
+      return;
+    }
+
+    const text = (r.data || '').trim();
+    if (!text) {
+      out.removeAttribute('style');
+      out.style.cssText = 'color: var(--text-faint); font-size: 12px; padding: 16px; border: 1px solid var(--hair); background: var(--bg-card);';
+      out.textContent = `No hints matched "${q}". The SDK hint pool is cross-session and populated by other tools — it may be empty for this query.`;
+      return;
+    }
+
+    out.className = 'doc-reader';
+    out.removeAttribute('style');
+    out.style.cssText = 'padding: 24px; border: 1px solid var(--hair); background: var(--bg-card);';
+    out.innerHTML = (window.marked ? window.marked.parse(text) : escapeHtml(text));
   });
 }
 
