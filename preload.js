@@ -40,6 +40,9 @@ contextBridge.exposeInMainWorld('api', {
   showMenu:     (name, x, y) => ipcRenderer.send('show-menu', name, x, y),
   onMenuAction: (callback) => ipcRenderer.on('menu-action', (_, action) => callback(action)),
 
+  // --- Watch mode ---
+  onLocalScriptsChanged: (callback) => ipcRenderer.on('local-scripts-changed', () => callback()),
+
   openUrl: (url) => ipcRenderer.send('open-url', url)
 });
 

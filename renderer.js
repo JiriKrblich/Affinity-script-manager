@@ -95,6 +95,16 @@ window.addEventListener('DOMContentLoaded', () => {
   const upBtn = document.getElementById('btn-open-upload');
   if (typeof openUploadModal === 'function') upBtn.onclick = openUploadModal;
 
+  if (window.api.onLocalScriptsChanged) {
+    window.api.onLocalScriptsChanged(() => {
+      if (state.nav === 'local') renderScreen();
+      // Always refresh the nav count — cheap and keeps it honest even off-screen.
+      window.api.listLocalScripts().then(res => {
+        if (res && res.success) updateNavCount('local', res.data.length);
+      }).catch(() => {});
+    });
+  }
+
   if (window.api.onMenuAction) {
     window.api.onMenuAction((action) => {
       switch (action) {
@@ -175,7 +185,7 @@ async function renderLocal(root) {
     `${items.length} scripts on disk · ${fmtBytes(totalBytes)} total`;
   screen.querySelector('#local-status').innerHTML = `
     <div class="left"><span class="status-dot on"></span><span>ready</span></div>
-    <div>watch mode: off</div>
+    <div>watch mode: on</div>
   `;
 
   const table = screen.querySelector('#local-table');
@@ -500,7 +510,7 @@ async function renderDocs(root) {
   docsCache.forEach((d, i) => {
     const card = document.createElement('div'); card.className = 'doc-card';
     card.innerHTML = `
-      <div class="meta"><span>${String(i + 1).padStart(2, '0')}</span><span>${d.builtin ? 'Bundled' : 'Reference'}</span></div>
+      <div class="meta"><span>${String(i + 1).padStart(2, '0')}</span><span>Reference</span></div>
       <h3>${escapeHtml(d.title)}</h3>
       <div class="read">Read →</div>
     `;

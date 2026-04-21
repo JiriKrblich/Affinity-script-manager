@@ -123,6 +123,49 @@ async function saveConfig(config) {
   await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
 }
 
+// --- Watch mode: re-push edited scripts to the bridge and notify the renderer ---
+async function startWatcher() {
+  const pending = new Map(); // filename -> timer (debounce)
+
+  const handleChange = async (filename) => {
+    if (!filename || !filename.endsWith('.js')) return;
+    const full = path.join(localScriptsDir, filename);
+    let exists = false;
+    try { await fs.stat(full); exists = true; } catch {}
+
+    if (exists) {
+      try {
+        const code = await fs.readFile(full, 'utf8');
+        const title = path.parse(filename).name;
+        await callTool(client, "save_script_to_library", {
+          title,
+          description: "Updated via Script Manager watch mode",
+          code,
+        }).catch(() => {}); // best-effort: bridge may be offline
+      } catch {}
+    }
+    if (win && !win.isDestroyed()) win.webContents.send('local-scripts-changed');
+  };
+
+  const debounced = (filename) => {
+    const prev = pending.get(filename);
+    if (prev) clearTimeout(prev);
+    pending.set(filename, setTimeout(() => {
+      pending.delete(filename);
+      handleChange(filename);
+    }, 300));
+  };
+
+  try {
+    const watcher = fs.watch(localScriptsDir);
+    for await (const { filename } of watcher) {
+      debounced(filename);
+    }
+  } catch (err) {
+    console.warn('watch mode error:', err.message);
+  }
+}
+
 app.whenReady().then(async () => {
   localScriptsDir = path.join(app.getPath('userData'), 'MyScripts');
   configPath = path.join(app.getPath('userData'), 'config.json');
@@ -131,6 +174,8 @@ app.whenReady().then(async () => {
   client = new Client({ name: "script-mgr-ui", version: "1.0.0" });
   transport = new SSEClientTransport(new URL(SERVER_URL));
   await client.connect(transport).catch(console.error);
+
+  startWatcher(); // fire-and-forget
 
   win = new BrowserWindow({
     width: 1200, height: 820, title: "Affinity Script Manager",
@@ -363,36 +408,18 @@ app.whenReady().then(async () => {
   ipcMain.on('open-url', (event, url) => shell.openExternal(url));
 
   ipcMain.handle('fetch-docs', async () => {
-    const docs = [];
-
-    // Prepend built-in docs shipped in readme/docs/
-    try {
-      const docsDir = path.join(__dirname, 'readme', 'docs');
-      const files = (await fs.readdir(docsDir)).filter(f => f.endsWith('.md')).sort();
-      for (const f of files) {
-        try {
-          const content = await fs.readFile(path.join(docsDir, f), 'utf8');
-          const firstLine = (content.match(/^#\s+(.+)$/m) || [])[1];
-          const title = (firstLine || path.parse(f).name).trim();
-          docs.push({ title, content, builtin: true });
-        } catch {}
-      }
-    } catch {}
-
-    // Then MCP-provided SDK docs (best-effort)
     try {
       const listResult = await callTool(client, "list_sdk_documentation", {});
       const fileNames = parseCsvTextContent(listResult);
+      const docs = [];
       for (const fileName of fileNames) {
         try {
           const readResult = await callTool(client, "read_sdk_documentation_topic", { filename: fileName });
-          docs.push({ title: fileName, content: getTextContent(readResult), builtin: false });
+          docs.push({ title: fileName, content: getTextContent(readResult) });
         } catch (e) {}
       }
-    } catch (error) {
-      if (docs.length === 0) return { success: false, error: error.message };
-    }
-    return { success: true, data: docs };
+      return { success: true, data: docs };
+    } catch (error) { return { success: false, error: error.message }; }
   });
 
   ipcMain.handle('search-docs', async (event, query) => {
