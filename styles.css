@@ -124,3 +124,47 @@ button, input, select, textarea, .card, .modal, .tag, .gh-btn, .accent-btn { bor
 .status-dot.on { background: var(--accent); }
 
 .hairline { height: 1px; background: var(--hair); border: 0; margin: 0; }
+
+/* ---------- App shell ---------- */
+.app-frame { height: 100vh; width: 100vw; display: flex; flex-direction: column; border: 1px solid var(--border); }
+
+.titlebar { flex-shrink: 0; height: 56px; background: var(--bg-chrome); border-bottom: 1px solid var(--hair); display: flex; flex-direction: column; user-select: none; -webkit-app-region: drag; }
+.titlebar-row { height: 28px; display: flex; align-items: center; padding: 0 0 0 16px; border-bottom: 1px solid var(--hair-soft); }
+.titlebar-name { flex: 1; display: flex; align-items: center; gap: 10px; }
+.tb-brand     { font: 400 11px/1 var(--f-mono); color: var(--text-dim); letter-spacing: 0.3px; }
+.tb-sep       { color: #333; font-size: 11px; }
+.tb-workspace { font: 400 11px/1 var(--f-mono); color: var(--text); }
+.titlebar-ctrls { display: flex; -webkit-app-region: no-drag; }
+.tb-ctrl { width: 36px; height: 28px; display: flex; align-items: center; justify-content: center; border: none; background: transparent; color: var(--text); cursor: pointer; transition: background .1s, color .1s; }
+.tb-ctrl:hover { background: var(--bg-hover); color: var(--text-strong); }
+.tb-ctrl.danger:hover { background: var(--danger); color: #fff; }
+.titlebar-menu { height: 28px; display: flex; align-items: center; padding: 0 8px; -webkit-app-region: no-drag; }
+.tb-menu { padding: 4px 10px; font-size: 12px; color: var(--text); cursor: default; transition: background .1s, color .1s; }
+.tb-menu:hover { background: var(--bg-hover); color: var(--text-strong); }
+
+.app-body { flex: 1; display: flex; min-height: 0; }
+
+.sidebar { width: 244px; flex-shrink: 0; background: var(--bg-chrome); border-right: 1px solid var(--hair); display: flex; flex-direction: column; user-select: none; }
+.brand-lockup { padding: 22px 20px 28px; display: flex; align-items: center; gap: 10px; }
+.brand-tile { width: 22px; height: 22px; border: 1px solid var(--border-hi); display: flex; align-items: center; justify-content: center; color: var(--accent); }
+.brand-text { display: flex; flex-direction: column; line-height: 1; }
+.brand-name { font: 600 12px/1 var(--f-sans); letter-spacing: 0.2px; color: var(--text-strong); }
+.brand-ver  { font: 400 10px/1 var(--f-mono); color: var(--text-faint); margin-top: 4px; letter-spacing: 0.3px; }
+
+.nav { flex: 1; padding: 0 12px; overflow: auto; }
+.nav-section { margin-bottom: 20px; }
+.nav-section-label { padding: 0 10px 10px; }
+.nav-item { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; margin-bottom: 1px; background: transparent; border: none; text-align: left; cursor: pointer; color: var(--text); font: 400 13px/1 var(--f-sans); transition: background .12s, color .12s; }
+.nav-item:hover { background: #1f1f1f; }
+.nav-item.active { background: var(--bg-hover); color: var(--text-strong); }
+.nav-item.active::before { content: ""; position: absolute; left: 0; top: 6px; bottom: 6px; width: 2px; background: var(--accent); }
+.nav-item .label { flex: 1; }
+.nav-item .count { font: 400 10px/1 var(--f-mono); color: var(--text-faint); }
+
+.sidebar-footer { padding: 14px 16px; border-top: 1px solid var(--hair); display: flex; flex-direction: column; gap: 10px; }
+.sb-meta { font: 400 10px/1.4 var(--f-mono); color: var(--text-faint); }
+
+.main { flex: 1; min-width: 0; background: var(--bg-app); overflow: auto; }
+.screen { padding: 40px 48px 80px; max-width: 1500px; }
+.screen h1 { font: 600 36px/1.1 var(--f-sans); letter-spacing: -0.8px; color: var(--text-strong); margin: 8px 0 14px; }
+.screen .subhead { font-size: 12px; color: var(--text); margin-bottom: 28px; }

@@ -13,7 +13,8 @@ let transport;
 let localScriptsDir;
 let configPath;
 let win; 
-let settingsWin = null; 
+let settingsWin = null;
+ipcMain.on('app-version-sync', (e) => { e.returnValue = app.getVersion(); });
 
 // --- Helper Functions ---
 function getTextContent(result) {

@@ -37,3 +37,5 @@ contextBridge.exposeInMainWorld('api', {
   windowClose: () => ipcRenderer.send('window-close'),
   openUrl: (url) => ipcRenderer.send('open-url', url)
 });
+
+contextBridge.exposeInMainWorld('appVersion', ipcRenderer.sendSync('app-version-sync'));
