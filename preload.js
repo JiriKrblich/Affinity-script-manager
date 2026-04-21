@@ -35,6 +35,11 @@ contextBridge.exposeInMainWorld('api', {
   windowMin:   () => ipcRenderer.send('window-min'),
   windowMax:   () => ipcRenderer.send('window-max'),
   windowClose: () => ipcRenderer.send('window-close'),
+
+  // --- Titlebar menus ---
+  showMenu:     (name, x, y) => ipcRenderer.send('show-menu', name, x, y),
+  onMenuAction: (callback) => ipcRenderer.on('menu-action', (_, action) => callback(action)),
+
   openUrl: (url) => ipcRenderer.send('open-url', url)
 });
 

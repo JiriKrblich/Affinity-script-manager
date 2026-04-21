@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const { Client } = require("@modelcontextprotocol/sdk/client/index.js");
@@ -15,6 +15,71 @@ let configPath;
 let win; 
 let settingsWin = null;
 ipcMain.on('app-version-sync', (e) => { e.returnValue = app.getVersion(); });
+
+// --- Titlebar menu popups ---
+function buildMenu(name, targetWin) {
+  const sendAction = (action) => () => targetWin && targetWin.webContents.send('menu-action', action);
+  const templates = {
+    file: [
+      { label: 'New Script…',           accelerator: 'CmdOrCtrl+N', click: sendAction('new-script') },
+      { label: 'Reveal Scripts Folder', click: () => { if (localScriptsDir) shell.openPath(localScriptsDir).catch(() => {}); } },
+      { type: 'separator' },
+      { label: 'Quit', accelerator: process.platform === 'darwin' ? 'Cmd+Q' : 'Ctrl+Q', click: () => app.quit() },
+    ],
+    edit: [
+      { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
+      { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' },
+    ],
+    view: [
+      { label: 'Reload',          accelerator: 'CmdOrCtrl+R',       click: () => targetWin && targetWin.reload() },
+      { label: 'Force Reload',    accelerator: 'CmdOrCtrl+Shift+R', click: () => targetWin && targetWin.webContents.reloadIgnoringCache() },
+      { label: 'Toggle DevTools', accelerator: process.platform === 'darwin' ? 'Alt+Cmd+I' : 'Ctrl+Shift+I', click: () => targetWin && targetWin.webContents.toggleDevTools() },
+      { type: 'separator' },
+      { role: 'resetZoom', label: 'Actual Size' },
+      { role: 'zoomIn',    label: 'Zoom In'     },
+      { role: 'zoomOut',   label: 'Zoom Out'    },
+    ],
+    run: [
+      { label: 'Refresh Bridge',    click: sendAction('refresh-bridge') },
+      { label: 'Refresh Community', click: sendAction('refresh-community') },
+      { type: 'separator' },
+      { label: 'Open Settings…',    click: sendAction('open-settings') },
+    ],
+    window: [
+      { role: 'minimize' },
+      { label: 'Close', accelerator: 'CmdOrCtrl+W', click: () => targetWin && targetWin.close() },
+    ],
+    help: [
+      { label: 'Documentation', click: sendAction('nav-docs') },
+      { label: 'SDK Reference', click: sendAction('nav-sdk')  },
+      { type: 'separator' },
+      { label: 'Affinity Community on GitHub', click: () => shell.openExternal('https://github.com/JiriKrblich/Affinity-Community-Scripts') },
+      { label: 'Script Manager on GitHub',      click: () => shell.openExternal('https://github.com/JiriKrblich/Affinity-script-manager') },
+      { type: 'separator' },
+      { label: 'Check for Updates…', click: sendAction('check-updates') },
+      { label: 'About Script Manager', click: () => {
+        dialog.showMessageBox(targetWin, {
+          type: 'info',
+          title: 'About Script Manager',
+          message: 'Affinity Script Manager',
+          detail: `Version ${app.getVersion()}\n\nGraphic UI for uploading and downloading Affinity app scripts.\n\nMCP bridge: localhost:6767`,
+          buttons: ['OK'],
+        });
+      }},
+    ],
+  };
+  const tpl = templates[name];
+  if (!tpl) return null;
+  return Menu.buildFromTemplate(tpl);
+}
+
+ipcMain.on('show-menu', (e, name, x, y) => {
+  const targetWin = BrowserWindow.fromWebContents(e.sender);
+  if (!targetWin) return;
+  const menu = buildMenu(name, targetWin);
+  if (!menu) return;
+  menu.popup({ window: targetWin, x: Math.round(x), y: Math.round(y) });
+});
 
 // --- Helper Functions ---
 function getTextContent(result) {
@@ -298,18 +363,36 @@ app.whenReady().then(async () => {
   ipcMain.on('open-url', (event, url) => shell.openExternal(url));
 
   ipcMain.handle('fetch-docs', async () => {
+    const docs = [];
+
+    // Prepend built-in docs shipped in readme/docs/
+    try {
+      const docsDir = path.join(__dirname, 'readme', 'docs');
+      const files = (await fs.readdir(docsDir)).filter(f => f.endsWith('.md')).sort();
+      for (const f of files) {
+        try {
+          const content = await fs.readFile(path.join(docsDir, f), 'utf8');
+          const firstLine = (content.match(/^#\s+(.+)$/m) || [])[1];
+          const title = (firstLine || path.parse(f).name).trim();
+          docs.push({ title, content, builtin: true });
+        } catch {}
+      }
+    } catch {}
+
+    // Then MCP-provided SDK docs (best-effort)
     try {
       const listResult = await callTool(client, "list_sdk_documentation", {});
       const fileNames = parseCsvTextContent(listResult);
-      const docs = [];
       for (const fileName of fileNames) {
         try {
           const readResult = await callTool(client, "read_sdk_documentation_topic", { filename: fileName });
-          docs.push({ title: fileName, content: getTextContent(readResult) });
+          docs.push({ title: fileName, content: getTextContent(readResult), builtin: false });
         } catch (e) {}
       }
-      return { success: true, data: docs };
-    } catch (error) { return { success: false, error: error.message }; }
+    } catch (error) {
+      if (docs.length === 0) return { success: false, error: error.message };
+    }
+    return { success: true, data: docs };
   });
 
   ipcMain.handle('search-docs', async (event, query) => {

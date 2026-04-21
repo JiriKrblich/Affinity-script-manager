@@ -76,6 +76,16 @@ function wireTitleBar() {
   document.getElementById('tb-close').onclick = () => window.api.windowClose();
   document.getElementById('brand-icon').appendChild(Ico('code', { size: 12, sw: 1.5 }));
   document.getElementById('ico-upload').appendChild(Ico('upload', { size: 12, sw: 1.8 }));
+
+  document.querySelectorAll('.tb-menu').forEach(el => {
+    el.style.cursor = 'pointer';
+    el.addEventListener('click', () => {
+      if (!window.api.showMenu) return;
+      const name = el.textContent.trim().toLowerCase();
+      const r = el.getBoundingClientRect();
+      window.api.showMenu(name, r.left, r.bottom);
+    });
+  });
 }
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -84,6 +94,23 @@ window.addEventListener('DOMContentLoaded', () => {
   // openUploadModal is defined in a later task; guard it for now.
   const upBtn = document.getElementById('btn-open-upload');
   if (typeof openUploadModal === 'function') upBtn.onclick = openUploadModal;
+
+  if (window.api.onMenuAction) {
+    window.api.onMenuAction((action) => {
+      switch (action) {
+        case 'new-script':
+          if (typeof openUploadModal === 'function') openUploadModal();
+          break;
+        case 'refresh-bridge':    state.nav = 'bridge';    renderNav(); renderScreen(); break;
+        case 'refresh-community': state.nav = 'community'; renderNav(); renderScreen(); break;
+        case 'nav-docs':          state.nav = 'docs';      renderNav(); renderScreen(); break;
+        case 'nav-sdk':           state.nav = 'sdk';       renderNav(); renderScreen(); break;
+        case 'open-settings':     window.api.openSettings(); break;
+        case 'check-updates':     if (window.api.checkUpdates) window.api.checkUpdates(); break;
+      }
+    });
+  }
+
   renderNav();
   renderScreen();
 
@@ -473,7 +500,7 @@ async function renderDocs(root) {
   docsCache.forEach((d, i) => {
     const card = document.createElement('div'); card.className = 'doc-card';
     card.innerHTML = `
-      <div class="meta"><span>${String(i + 1).padStart(2, '0')}</span><span>Reference</span></div>
+      <div class="meta"><span>${String(i + 1).padStart(2, '0')}</span><span>${d.builtin ? 'Bundled' : 'Reference'}</span></div>
       <h3>${escapeHtml(d.title)}</h3>
       <div class="read">Read →</div>
     `;
