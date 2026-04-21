@@ -54,3 +54,73 @@ html, body { margin: 0; padding: 0; background: var(--bg-app); color: var(--text
 
 /* hard rule: no rounded corners anywhere except status-dots */
 button, input, select, textarea, .card, .modal, .tag, .gh-btn, .accent-btn { border-radius: 0 !important; }
+
+/* ---------- Primitives ---------- */
+
+.gh-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 8px 14px;
+  background: transparent;
+  border: 1px solid var(--border-dim);
+  color: var(--text);
+  font: 500 11px/1 var(--f-sans);
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition: all .12s;
+}
+.gh-btn:hover { background: var(--hair); border-color: var(--border-hi); color: var(--text-strong); }
+.gh-btn.compact { padding: 6px 10px; }
+.gh-btn.danger  { color: var(--danger-mute); }
+.gh-btn.danger:hover { background: var(--danger-bg); border-color: var(--danger-border); color: var(--danger-text); }
+
+.accent-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 10px 16px;
+  background: var(--accent);
+  border: none;
+  color: #0f0f0f;
+  font: 600 11px/1 var(--f-sans);
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition: background .12s;
+}
+.accent-btn:hover { background: var(--accent-hover); }
+.accent-btn.compact { padding: 6px 12px; }
+
+.icon-btn {
+  width: 26px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: none; cursor: pointer;
+  color: var(--text-dim);
+  transition: all .12s;
+}
+.icon-btn:hover { background: var(--border); color: var(--text-strong); }
+.icon-btn.danger:hover { background: var(--danger-bg); color: var(--danger-text); }
+
+.tag {
+  display: inline-flex; align-items: center;
+  padding: 2px 8px;
+  border: 1px solid var(--border-dim);
+  font: 400 10px/1 var(--f-mono);
+  color: var(--text);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.eyebrow {
+  font: 500 10px/1 var(--f-mono);
+  color: var(--text-faint);
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+}
+.eyebrow.accent { color: var(--accent); }
+
+.status-dot {
+  display: inline-block;
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--text-mute);
+}
+.status-dot.on { background: var(--accent); }
+
+.hairline { height: 1px; background: var(--hair); border: 0; margin: 0; }
