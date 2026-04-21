@@ -60,13 +60,11 @@ function navigate(id) {
 async function renderScreen() {
   const main = document.getElementById('main');
   main.innerHTML = '';
-  const dispatch = { local: renderLocal, bridge: renderBridge, community: renderCommunity, docs: renderDocsStub, sdk: renderSdkStub };
+  const dispatch = { local: renderLocal, bridge: renderBridge, community: renderCommunity, docs: renderDocs, sdk: renderSdk };
   const fn = dispatch[state.nav] || renderLocal;
   await fn(main);
 }
 
-function renderDocsStub(root) { stubScreen(root, 'Support', 'Documentation'); }
-function renderSdkStub(root) { stubScreen(root, 'Support', 'SDK Reference'); }
 function stubScreen(root, eyebrow, title) {
   root.innerHTML = `<div class="screen"><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p class="subhead">Screen not yet ported — see task list.</p></div>`;
 }
@@ -428,4 +426,99 @@ async function renderCommunity(root) {
       if (state.nav === 'community') renderScreen();
     });
   }
+}
+
+// ---------- Documentation screen ----------
+let docsCache = null;
+
+async function renderDocs(root) {
+  const screen = document.createElement('div'); screen.className = 'screen';
+  screen.innerHTML = `
+    <div class="eyebrow">Support</div>
+    <h1>Documentation</h1>
+    <p class="subhead" id="docs-sub">Fetching topics…</p>
+    <div id="docs-body"></div>
+  `;
+  root.appendChild(screen);
+  const body = screen.querySelector('#docs-body');
+
+  if (!docsCache) {
+    const res = await window.api.fetchDocs();
+    if (!res.success) { body.textContent = 'Error: ' + res.error; return; }
+    docsCache = res.data || [];
+  }
+  screen.querySelector('#docs-sub').textContent = `${docsCache.length} topics`;
+
+  const grid = document.createElement('div'); grid.className = 'docs-grid';
+  docsCache.forEach((d, i) => {
+    const card = document.createElement('div'); card.className = 'doc-card';
+    card.innerHTML = `
+      <div class="meta"><span>${String(i + 1).padStart(2, '0')}</span><span>Reference</span></div>
+      <h3>${escapeHtml(d.title)}</h3>
+      <div class="read">Read →</div>
+    `;
+    card.onclick = () => openDocReader(d);
+    grid.appendChild(card);
+  });
+  body.appendChild(grid);
+}
+
+function openDocReader(doc) {
+  const main = document.getElementById('main'); main.innerHTML = '';
+  const reader = document.createElement('div'); reader.className = 'doc-reader';
+  const back = document.createElement('button'); back.className = 'gh-btn compact'; back.style.marginBottom = '20px';
+  back.textContent = '← Back to Documentation';
+  back.onclick = () => renderScreen();
+  reader.appendChild(back);
+
+  const title = document.createElement('h1'); title.textContent = doc.title;
+  reader.appendChild(title);
+
+  const content = document.createElement('div');
+  content.innerHTML = (window.marked && doc.content) ? window.marked.parse(doc.content) : escapeHtml(doc.content || '');
+  reader.appendChild(content);
+
+  main.appendChild(reader);
+}
+
+// ---------- SDK Reference screen ----------
+async function renderSdk(root) {
+  const screen = document.createElement('div'); screen.className = 'screen';
+  screen.innerHTML = `
+    <div class="eyebrow">Support</div>
+    <h1>SDK Reference</h1>
+    <p class="subhead">Search the SDK for hints and examples.</p>
+    <div class="search-bar" style="margin-bottom: 24px;">
+      <div class="search-wrap">
+        <span id="sdk-search-ico"></span>
+        <input id="sdk-q" type="text" placeholder="How do I handle authentication?" />
+        <span class="kbd">↵</span>
+      </div>
+    </div>
+    <div id="sdk-result" style="min-height:120px; color:var(--text-faint); font-size:12px;">Type a question and press Enter.</div>
+  `;
+  root.appendChild(screen);
+  screen.querySelector('#sdk-search-ico').appendChild(Ico('search', { size: 13 }));
+
+  const input = screen.querySelector('#sdk-q');
+  const out = screen.querySelector('#sdk-result');
+
+  input.addEventListener('keydown', async (e) => {
+    if (e.key !== 'Enter') return;
+    const q = input.value.trim();
+    if (!q) return;
+    out.className = '';
+    out.style = '';
+    out.innerHTML = '<div class="eyebrow accent">searching…</div>';
+
+    const r = await window.api.searchDocs(q);
+    if (r.success) {
+      out.className = 'doc-reader';
+      out.style.cssText = 'padding: 24px; border: 1px solid var(--hair); background: var(--bg-card);';
+      out.innerHTML = (window.marked ? window.marked.parse(r.data || '') : escapeHtml(r.data || ''));
+    } else {
+      out.style.cssText = 'color: var(--danger-text); font-size: 12px;';
+      out.textContent = r.error || 'Search failed';
+    }
+  });
 }
