@@ -204,3 +204,37 @@ button, input, select, textarea, .card, .modal, .tag, .gh-btn, .accent-btn { bor
 .card-title { font: 600 16px/1.2 var(--f-sans); color: var(--text-strong); letter-spacing: -0.3px; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
 
 .section-title { font: 600 18px/1.3 var(--f-sans); color: var(--text-strong); margin: 40px 0 12px; }
+
+/* ---------- Community ---------- */
+.screen-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 28px; gap: 16px; flex-wrap: wrap; }
+.screen-header .actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+.search-bar { display: flex; background: var(--bg-card); border: 1px solid var(--hair); margin-bottom: 20px; }
+.search-bar .search-wrap { flex: 1; display: flex; align-items: center; gap: 10px; padding: 0 14px; }
+.search-bar input { flex: 1; background: transparent; border: none; color: var(--text-strong); font: 400 13px/1 var(--f-sans); padding: 12px 0; outline: none; }
+.search-bar input::placeholder { color: var(--text-faint); }
+.kbd { font: 400 10px/1 var(--f-mono); color: var(--text-faint); border: 1px solid var(--border-dim); padding: 2px 6px; }
+.search-bar .sort { border-left: 1px solid var(--hair); padding: 0 14px; display: flex; align-items: center; }
+.search-bar select { background: transparent; color: var(--text); border: none; font: 400 11px/1 var(--f-sans); padding: 12px 0; outline: none; cursor: pointer; }
+.search-bar select option { background: var(--bg-card); color: var(--text-strong); }
+
+.cat-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--hair); margin-bottom: 20px; overflow-x: auto; }
+.cat-tab { background: transparent; border: none; padding: 12px 16px; color: var(--text); font: 400 12px/1 var(--f-sans); cursor: pointer; border-bottom: 2px solid transparent; transition: color .12s, border-color .12s; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.cat-tab:hover { color: var(--text-strong); }
+.cat-tab.active { color: var(--text-strong); border-bottom-color: var(--accent); }
+.cat-tab .count { font-family: var(--f-mono); font-size: 10px; color: var(--text-faint); }
+
+.community-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+.c-card { position: relative; background: var(--bg-card); border: 1px solid var(--border); padding: 22px; display: flex; flex-direction: column; transition: border-color .12s; }
+.c-card:hover { border-color: var(--border-hi); }
+.c-card.featured { background: var(--bg-card-hi); }
+.c-card.featured::before { content: ""; position: absolute; top: -1px; left: -1px; right: -1px; height: 2px; background: var(--accent); }
+.c-card .featured-eyebrow { position: absolute; top: -22px; left: 0; }
+.c-card .top-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 4px; }
+.c-card h3 { font: 600 16px/1.2 var(--f-sans); color: var(--text-strong); letter-spacing: -0.3px; margin: 0; }
+.c-card .author { font: 400 11px/1 var(--f-mono); color: var(--text-dim); margin-bottom: 14px; }
+.c-card .desc { font: 400 12px/1.6 var(--f-sans); color: var(--text); margin-bottom: 18px; flex: 1; }
+.c-card .foot { display: flex; justify-content: space-between; align-items: center; padding-top: 14px; border-top: 1px solid var(--hair); gap: 10px; }
+.c-card .install-btn { background: transparent; border: 1px solid var(--border-hi); color: var(--text-strong); font: 600 11px/1 var(--f-sans); letter-spacing: 0.3px; padding: 8px 14px; cursor: pointer; transition: all .12s; }
+.c-card .install-btn:hover { background: var(--text-strong); color: #0f0f0f; }
+.c-card .install-btn.installed { border-color: var(--border-dim); color: var(--accent); background: transparent; cursor: default; }

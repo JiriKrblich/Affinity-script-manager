@@ -60,12 +60,11 @@ function navigate(id) {
 async function renderScreen() {
   const main = document.getElementById('main');
   main.innerHTML = '';
-  const dispatch = { local: renderLocal, bridge: renderBridge, community: renderCommunityStub, docs: renderDocsStub, sdk: renderSdkStub };
+  const dispatch = { local: renderLocal, bridge: renderBridge, community: renderCommunity, docs: renderDocsStub, sdk: renderSdkStub };
   const fn = dispatch[state.nav] || renderLocal;
   await fn(main);
 }
 
-function renderCommunityStub(root) { stubScreen(root, 'Discover', 'Community Scripts'); }
 function renderDocsStub(root) { stubScreen(root, 'Support', 'Documentation'); }
 function renderSdkStub(root) { stubScreen(root, 'Support', 'SDK Reference'); }
 function stubScreen(root, eyebrow, title) {
@@ -276,4 +275,157 @@ async function renderBridge(root) {
   }
 
   screen.querySelector('#btn-bridge-refresh').onclick = () => renderScreen();
+}
+
+// ---------- Community Scripts screen ----------
+async function renderCommunity(root) {
+  const screen = document.createElement('div'); screen.className = 'screen';
+  screen.innerHTML = `
+    <div class="eyebrow">Discover</div>
+    <div class="screen-header">
+      <div>
+        <h1 style="margin-bottom:6px">Community Scripts</h1>
+        <p class="subhead" style="margin:0"><span id="c-count">—</span> scripts from <span id="c-repos">—</span> repositories</p>
+      </div>
+      <div class="actions">
+        <button class="gh-btn compact" id="btn-community-source"><span id="ico-src"></span> Source</button>
+        <button class="gh-btn compact" id="btn-community-settings"><span id="ico-gear"></span> Settings</button>
+        <button class="accent-btn compact" id="btn-community-submit"><span id="ico-plus"></span> Submit Script</button>
+      </div>
+    </div>
+
+    <div class="search-bar">
+      <div class="search-wrap">
+        <span id="c-search-icon"></span>
+        <input id="c-search" type="text" placeholder="Search scripts by name, author, description…" />
+        <span class="kbd">⌘K</span>
+      </div>
+      <div class="sort">
+        <select id="c-sort">
+          <option value="name">A — Z</option>
+          <option value="category">Category</option>
+          <option value="author">Author</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="cat-tabs" id="c-tabs"></div>
+    <div class="community-grid" id="c-grid"></div>
+  `;
+  root.appendChild(screen);
+
+  screen.querySelector('#ico-src').appendChild(Ico('github', { size: 12 }));
+  screen.querySelector('#ico-gear').appendChild(Ico('gear', { size: 12 }));
+  screen.querySelector('#ico-plus').appendChild(Ico('plus', { size: 12, sw: 1.8 }));
+  screen.querySelector('#c-search-icon').appendChild(Ico('search', { size: 13 }));
+
+  screen.querySelector('#btn-community-source').onclick   = () => window.api.openUrl('https://github.com/JiriKrblich/Affinity-Community-Scripts');
+  screen.querySelector('#btn-community-settings').onclick = () => window.api.openSettings();
+  screen.querySelector('#btn-community-submit').onclick   = () => window.api.openExternalRepo();
+
+  const res = await window.api.listCommunityScripts();
+  const scripts = (res && res.success) ? (res.data || []) : [];
+
+  screen.querySelector('#c-count').textContent = scripts.length;
+  const repos = new Set(scripts.map(s => s._source).filter(Boolean));
+  screen.querySelector('#c-repos').textContent = repos.size;
+
+  // Build category list
+  const catCounts = new Map();
+  catCounts.set('all', scripts.length);
+  for (const s of scripts) {
+    const c = (s.category || 'other').toLowerCase();
+    catCounts.set(c, (catCounts.get(c) || 0) + 1);
+  }
+
+  const tabs = screen.querySelector('#c-tabs');
+  function renderTabs() {
+    tabs.innerHTML = '';
+    for (const [c, count] of catCounts) {
+      const btn = document.createElement('button');
+      btn.className = 'cat-tab' + (state.communityFilter === c ? ' active' : '');
+      const label = c === 'all' ? 'All' : (c[0].toUpperCase() + c.slice(1));
+      btn.innerHTML = `<span>${escapeHtml(label)}</span><span class="count">${count}</span>`;
+      btn.onclick = () => { state.communityFilter = c; renderTabs(); paint(); };
+      tabs.appendChild(btn);
+    }
+  }
+
+  const input = screen.querySelector('#c-search');
+  input.value = state.communityQuery;
+  input.oninput = (e) => { state.communityQuery = e.target.value; paint(); };
+  const sortSel = screen.querySelector('#c-sort');
+  sortSel.value = state.communitySort;
+  sortSel.onchange = (e) => { state.communitySort = e.target.value; paint(); };
+
+  const grid = screen.querySelector('#c-grid');
+
+  function paint() {
+    const q = state.communityQuery.toLowerCase();
+    let filtered = scripts.filter(s => {
+      if (state.communityFilter !== 'all' && (s.category || 'other').toLowerCase() !== state.communityFilter) return false;
+      if (!q) return true;
+      return [s.name, s.description, s.author].some(v => (v || '').toLowerCase().includes(q));
+    });
+    filtered.sort((a, b) => (a[state.communitySort] || '').localeCompare(b[state.communitySort] || ''));
+
+    grid.innerHTML = '';
+    if (filtered.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'grid-column: 1/-1; text-align:center; padding:48px; color:var(--text-faint); font-size:13px;';
+      empty.textContent = q ? `No scripts match "${q}".` : 'No scripts in this category.';
+      grid.appendChild(empty);
+      return;
+    }
+
+    filtered.forEach((s, i) => {
+      const installed = state.installedIds.has(s.download_url);
+      const isFeatured = (i === 0 && !q && state.communityFilter === 'all');
+      const card = document.createElement('div');
+      card.className = 'c-card' + (isFeatured ? ' featured' : '');
+      const cardHtml = [];
+      if (isFeatured) cardHtml.push('<div class="eyebrow accent featured-eyebrow">Featured</div>');
+      cardHtml.push(`
+        <div class="top-row">
+          <h3>${escapeHtml(s.name || '(untitled)')}</h3>
+          <span class="tag">v${escapeHtml(s.version || '1.0.0')}</span>
+        </div>
+        <div class="author">by ${escapeHtml(s.author || 'community')}</div>
+        <div class="desc">${escapeHtml(s.description || '')}</div>
+        <div class="foot">
+          <span class="tag">${escapeHtml((s.category || 'other').toLowerCase())}</span>
+          <button class="install-btn${installed ? ' installed' : ''}">${installed ? '\u2713 Installed' : 'Install'}</button>
+        </div>
+      `);
+      card.innerHTML = cardHtml.join('');
+
+      const btn = card.querySelector('.install-btn');
+      btn.onclick = async () => {
+        if (installed) return;
+        btn.textContent = 'Installing\u2026'; btn.disabled = true;
+        const r = await window.api.downloadCommunityScript(s.download_url, s.name);
+        if (r && r.success) {
+          state.installedIds.add(s.download_url);
+          btn.classList.add('installed');
+          btn.textContent = '\u2713 Installed';
+        } else {
+          alert((r && r.error) || 'Download failed');
+          btn.textContent = 'Install';
+          btn.disabled = false;
+        }
+      };
+      grid.appendChild(card);
+    });
+  }
+
+  renderTabs();
+  paint();
+
+  // Refresh community when settings window adds/removes a repo
+  if (window.api.onReposChanged && !window._communityReposHandlerAttached) {
+    window._communityReposHandlerAttached = true;
+    window.api.onReposChanged(() => {
+      if (state.nav === 'community') renderScreen();
+    });
+  }
 }
