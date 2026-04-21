@@ -85,6 +85,25 @@ window.addEventListener('DOMContentLoaded', () => {
   if (typeof openUploadModal === 'function') upBtn.onclick = openUploadModal;
   renderNav();
   renderScreen();
+
+  // Sidebar footer meta
+  document.getElementById('sb-meta-path').textContent = '~/MyScripts';
+  document.getElementById('sb-meta-free').textContent = 'local store';
+
+  // Update-available banner (replaces sb-meta-free with a button when an update is found)
+  if (window.api.onUpdateAvailable) {
+    window.api.onUpdateAvailable((url, version) => {
+      const slot = document.getElementById('sb-meta-free');
+      slot.innerHTML = '';
+      const btn = document.createElement('button');
+      btn.className = 'gh-btn compact';
+      btn.style.width = '100%';
+      btn.style.color = 'var(--accent)';
+      btn.textContent = `Update to v${version}`;
+      btn.onclick = () => window.api.openUrl(url);
+      slot.appendChild(btn);
+    });
+  }
 });
 
 // ---------- helpers ----------
@@ -123,6 +142,7 @@ async function renderLocal(root) {
   }
   const items = res.data;
   const totalBytes = items.reduce((a, b) => a + b.size, 0);
+  updateNavCount('local', items.length);
   screen.querySelector('#local-subhead').innerHTML =
     `${items.length} scripts on disk · ${fmtBytes(totalBytes)} total`;
   screen.querySelector('#local-status').innerHTML = `
@@ -325,6 +345,7 @@ async function renderCommunity(root) {
   const scripts = (res && res.success) ? (res.data || []) : [];
 
   screen.querySelector('#c-count').textContent = scripts.length;
+  updateNavCount('community', scripts.length);
   const repos = new Set(scripts.map(s => s._source).filter(Boolean));
   screen.querySelector('#c-repos').textContent = repos.size;
 
@@ -601,4 +622,17 @@ function openDownloadModal(title) {
     close();
     state.nav = 'local'; renderNav(); renderScreen();
   };
+}
+
+// ---------- Nav count helper ----------
+function updateNavCount(id, count) {
+  const item = document.querySelector(`.nav-item[data-nav="${id}"]`);
+  if (!item) return;
+  let slot = item.querySelector('.count');
+  if (!slot) {
+    slot = document.createElement('span');
+    slot.className = 'count';
+    item.appendChild(slot);
+  }
+  slot.textContent = (count == null) ? '' : count;
 }
