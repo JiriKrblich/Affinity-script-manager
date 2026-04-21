@@ -60,12 +60,11 @@ function navigate(id) {
 async function renderScreen() {
   const main = document.getElementById('main');
   main.innerHTML = '';
-  const dispatch = { local: renderLocal, bridge: renderBridgeStub, community: renderCommunityStub, docs: renderDocsStub, sdk: renderSdkStub };
+  const dispatch = { local: renderLocal, bridge: renderBridge, community: renderCommunityStub, docs: renderDocsStub, sdk: renderSdkStub };
   const fn = dispatch[state.nav] || renderLocal;
   await fn(main);
 }
 
-function renderBridgeStub(root) { stubScreen(root, 'Library', 'Server Bridge'); }
 function renderCommunityStub(root) { stubScreen(root, 'Discover', 'Community Scripts'); }
 function renderDocsStub(root) { stubScreen(root, 'Support', 'Documentation'); }
 function renderSdkStub(root) { stubScreen(root, 'Support', 'SDK Reference'); }
@@ -194,4 +193,87 @@ async function renderLocal(root) {
     row.append(iconCell, nameCell, descCell, modCell, sizeCell, actions);
     table.appendChild(row);
   }
+}
+
+// ---------- Server Bridge screen ----------
+async function renderBridge(root) {
+  const screen = document.createElement('div'); screen.className = 'screen';
+  screen.innerHTML = `
+    <div class="eyebrow">Library</div>
+    <h1>Server Bridge</h1>
+    <p class="subhead">MCP connection to <span style="font-family:var(--f-mono)">localhost:6767</span></p>
+
+    <div class="bridge-table">
+      <div class="bridge-row header">
+        <div class="col">Host</div><div class="col">Address</div>
+        <div class="col">Version</div><div class="col">Latency</div>
+        <div class="col">Status</div><div class="col">Action</div>
+      </div>
+      <div class="bridge-row" id="bridge-primary">
+        <div style="color:var(--text-strong)">Affinity MCP</div>
+        <div class="mono" style="color:var(--text); font-family:var(--f-mono);">localhost:6767</div>
+        <div class="mono" style="font-family:var(--f-mono);">1.0.0</div>
+        <div class="mono" id="bridge-latency" style="font-family:var(--f-mono);">—</div>
+        <div><span class="status-dot" id="bridge-dot"></span> <span id="bridge-status" style="text-transform:uppercase; font-family:var(--f-mono); font-size:10px;">checking…</span></div>
+        <div><button class="gh-btn compact" id="btn-bridge-refresh">Refresh</button></div>
+      </div>
+    </div>
+
+    <div class="eyebrow">Event Stream</div>
+    <div class="event-log" id="bridge-log"></div>
+
+    <h2 class="section-title">Scripts on Bridge</h2>
+    <div class="card-grid" id="bridge-cards"></div>
+  `;
+  root.appendChild(screen);
+
+  const log = screen.querySelector('#bridge-log');
+  const pushEvent = (tag, msg) => {
+    const line = document.createElement('div'); line.className = 'event-line';
+    const now = new Date().toTimeString().slice(0, 8);
+    line.innerHTML = `<span class="t">${now}</span><span class="tag-${tag}">${tag.toUpperCase()}</span><span class="msg">${escapeHtml(msg)}</span>`;
+    log.prepend(line);
+  };
+  pushEvent('info', 'Attaching to bridge…');
+
+  const start = performance.now();
+  const res = await window.api.listMcpScripts();
+  const elapsed = Math.round(performance.now() - start);
+  screen.querySelector('#bridge-latency').textContent = `${elapsed} ms`;
+
+  if (res.success) {
+    screen.querySelector('#bridge-dot').classList.add('on');
+    screen.querySelector('#bridge-status').textContent = 'online';
+    pushEvent('ok', `connected · ${elapsed}ms round-trip`);
+  } else {
+    screen.querySelector('#bridge-status').textContent = 'offline';
+    pushEvent('warn', res.error || 'bridge unreachable');
+  }
+
+  const cards = screen.querySelector('#bridge-cards');
+  const titles = (res.success && typeof res.data === 'string')
+    ? res.data.split(/[\n,]+/).map(s => s.trim()).filter(Boolean)
+    : [];
+  if (titles.length === 0) {
+    cards.innerHTML = '<div style="color:var(--text-faint); font-size:12px; grid-column: 1/-1;">No scripts on bridge.</div>';
+  } else {
+    for (const t of titles) {
+      const c = document.createElement('div'); c.className = 'card';
+      const title = document.createElement('div'); title.className = 'card-title';
+      title.appendChild(Ico('file', { size: 14 }));
+      const span = document.createElement('span'); span.textContent = t;
+      title.appendChild(span);
+      c.appendChild(title);
+      const spacer = document.createElement('div'); spacer.style.flex = '1'; c.appendChild(spacer);
+      const btn = document.createElement('button'); btn.className = 'gh-btn compact'; btn.textContent = 'Download';
+      btn.onclick = () => {
+        if (typeof openDownloadModal === 'function') openDownloadModal(t);
+        else alert('Download modal arrives in Task 10. Script title: ' + t);
+      };
+      c.appendChild(btn);
+      cards.appendChild(c);
+    }
+  }
+
+  screen.querySelector('#btn-bridge-refresh').onclick = () => renderScreen();
 }

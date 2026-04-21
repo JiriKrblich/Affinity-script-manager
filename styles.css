@@ -185,3 +185,22 @@ button, input, select, textarea, .card, .modal, .tag, .gh-btn, .accent-btn { bor
 .row-desc   { font-size: 12px; color: var(--text); margin-top: 2px; line-height: 1.55; }
 .row-meta   { font: 400 11px/1 var(--f-mono); color: var(--text-dim); }
 .row-ext    { font: 400 10px/1 var(--f-mono); color: var(--text-faint); text-transform: uppercase; margin-left: 6px; }
+
+/* ---------- Bridge ---------- */
+.bridge-table { border-top: 1px solid var(--hair); margin-bottom: 40px; }
+.bridge-row { display: grid; grid-template-columns: 1.4fr 2fr 0.8fr 0.8fr 0.8fr 120px; gap: 14px; padding: 16px 20px; align-items: center; border-bottom: 1px solid var(--hair); }
+.bridge-row.header .col { font: 500 10px/1 var(--f-mono); color: var(--text-faint); text-transform: uppercase; letter-spacing: 1.2px; }
+.event-log { background: var(--log-bg); border: 1px solid var(--hair); padding: 16px 20px; font: 400 11px/1.7 var(--f-mono); min-height: 80px; }
+.event-line { display: grid; grid-template-columns: 70px 60px 1fr; gap: 10px; }
+.event-line .t { color: var(--text-faint); }
+.event-line .tag-info { color: var(--text-dim); }
+.event-line .tag-ok   { color: var(--accent); }
+.event-line .tag-warn { color: var(--warn); }
+.event-line .msg { color: var(--text); }
+
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-top: 20px; }
+.card { background: var(--bg-card); border: 1px solid var(--border); padding: 20px; display: flex; flex-direction: column; transition: border-color .12s; }
+.card:hover { border-color: var(--border-hi); }
+.card-title { font: 600 16px/1.2 var(--f-sans); color: var(--text-strong); letter-spacing: -0.3px; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+
+.section-title { font: 600 18px/1.3 var(--f-sans); color: var(--text-strong); margin: 40px 0 12px; }
