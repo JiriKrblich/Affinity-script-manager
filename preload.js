@@ -32,5 +32,8 @@ contextBridge.exposeInMainWorld('api', {
   // --- Systémové (Aktualizace) ---
   checkUpdates: () => ipcRenderer.invoke('check-updates'),
   onUpdateAvailable: (callback) => ipcRenderer.on('update-available', (event, url, version) => callback(url, version)),
+  windowMin:   () => ipcRenderer.send('window-min'),
+  windowMax:   () => ipcRenderer.send('window-max'),
+  windowClose: () => ipcRenderer.send('window-close'),
   openUrl: (url) => ipcRenderer.send('open-url', url)
 });

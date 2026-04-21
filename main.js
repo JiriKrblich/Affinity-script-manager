@@ -67,7 +67,10 @@ app.whenReady().then(async () => {
   await client.connect(transport).catch(console.error);
 
   win = new BrowserWindow({
-    width: 1100, height: 800, title: "Affinity Script Manager",
+    width: 1200, height: 820, title: "Affinity Script Manager",
+    frame: false,
+    minWidth: 960, minHeight: 600,
+    backgroundColor: '#1f1f1f',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true }
   });
 
@@ -337,6 +340,10 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('check-updates', async () => await checkForUpdates(true));
   win.webContents.once('did-finish-load', () => checkForUpdates(false));
+
+  ipcMain.on('window-min',   () => win.minimize());
+  ipcMain.on('window-max',   () => { win.isMaximized() ? win.unmaximize() : win.maximize(); });
+  ipcMain.on('window-close', () => win.close());
 
   win.loadFile('index.html');
 });
