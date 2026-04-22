@@ -101,7 +101,7 @@ function wireTitleBar() {
   document.getElementById('tb-min').onclick   = () => window.api.windowMin();
   document.getElementById('tb-max').onclick   = () => window.api.windowMax();
   document.getElementById('tb-close').onclick = () => window.api.windowClose();
-  document.getElementById('brand-icon').appendChild(Ico('code', { size: 12, sw: 1.5 }));
+  document.getElementById('brand-icon').appendChild(Ico('code', { size: 16, sw: 1.4 }));
   document.getElementById('ico-upload').appendChild(Ico('upload', { size: 12, sw: 1.8 }));
 
   document.querySelectorAll('.tb-menu').forEach(el => {
@@ -300,7 +300,7 @@ async function renderBridge(root) {
         <div class="mono" style="color:var(--text); font-family:var(--f-mono);">localhost:6767</div>
         <div class="mono" style="font-family:var(--f-mono);">1.0.0</div>
         <div class="mono" id="bridge-latency" style="font-family:var(--f-mono);">—</div>
-        <div><span class="status-dot" id="bridge-dot"></span> <span id="bridge-status" style="text-transform:uppercase; font-family:var(--f-mono); font-size:10px;">checking…</span></div>
+        <div><span class="status-dot" id="bridge-dot"></span> <span id="bridge-status" style="text-transform:uppercase; font-family:var(--f-mono); font-size:10px;"><span class="loading">checking</span></span></div>
         <div><button class="gh-btn compact" id="btn-bridge-refresh">Refresh</button></div>
       </div>
     </div>
@@ -397,7 +397,9 @@ async function renderCommunity(root) {
     </div>
 
     <div class="cat-tabs" id="c-tabs"></div>
-    <div class="community-grid" id="c-grid"></div>
+    <div class="community-grid" id="c-grid">
+      <div style="grid-column: 1/-1; color: var(--text-faint); font-size: 12px; padding: 20px 0;"><span class="loading">Fetching community scripts</span></div>
+    </div>
   `;
   root.appendChild(screen);
 
@@ -488,7 +490,7 @@ async function renderCommunity(root) {
       const btn = card.querySelector('.install-btn');
       btn.onclick = async () => {
         if (installed) return;
-        btn.textContent = 'Installing\u2026'; btn.disabled = true;
+        btn.innerHTML = '<span class="loading">Installing</span>'; btn.disabled = true;
         const r = await window.api.downloadCommunityScript(s.download_url, s.name);
         if (r && r.success) {
           state.installedIds.add(s.download_url);
@@ -524,7 +526,7 @@ async function renderDocs(root) {
   screen.innerHTML = `
     <div class="eyebrow">Support</div>
     <h1>Documentation</h1>
-    <p class="subhead" id="docs-sub">Fetching topics…</p>
+    <p class="subhead" id="docs-sub"><span class="loading">Fetching topics</span></p>
     <div id="docs-body"></div>
   `;
   root.appendChild(screen);
@@ -602,7 +604,7 @@ async function renderSdk(root) {
     out.style.minHeight = '120px';
     out.style.color = 'var(--text-faint)';
     out.style.fontSize = '12px';
-    out.innerHTML = '<div class="eyebrow accent">searching…</div>';
+    out.innerHTML = '<div class="eyebrow accent"><span class="loading">searching</span></div>';
 
     let r;
     try {
@@ -678,7 +680,7 @@ function openUploadModal() {
     const desc  = bd.querySelector('#m-desc').value.trim();
     if (!title || !code) { alert('Title and a .js file are required.'); return; }
     const btn = bd.querySelector('#m-save');
-    btn.textContent = 'Saving…'; btn.disabled = true;
+    btn.innerHTML = '<span class="loading">Saving</span>'; btn.disabled = true;
     const r = await window.api.saveScript(title, desc, code);
     if (!r || !r.success) { alert((r && r.error) || 'Save failed'); btn.textContent = 'Save Script'; btn.disabled = false; return; }
     close();
@@ -708,7 +710,7 @@ function openDownloadModal(title) {
     const name = bd.querySelector('#m-name').value.trim();
     if (!name) return;
     const btn = bd.querySelector('#m-ok');
-    btn.textContent = 'Downloading…'; btn.disabled = true;
+    btn.innerHTML = '<span class="loading">Downloading</span>'; btn.disabled = true;
     const r = await window.api.downloadFromMcp(title, name);
     if (!r || !r.success) { alert((r && r.error) || 'Download failed'); btn.textContent = 'Download'; btn.disabled = false; return; }
     close();
@@ -793,7 +795,7 @@ async function renderEditor(root) {
     if (!activeEditor) return;
     const code = activeEditor.getValue();
     const originalLabel = saveBtn.textContent;
-    saveBtn.textContent = 'Saving…'; saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="loading">Saving</span>'; saveBtn.disabled = true;
     const r = await window.api.saveLocalScript(filename, code);
     if (!r || !r.success) {
       alert('Save failed: ' + ((r && r.error) || 'unknown error'));
@@ -867,7 +869,7 @@ async function renderDevelop(root) {
 
   // Community section
   const commGrid = screen.querySelector('#dev-community');
-  commGrid.innerHTML = '<div style="color:var(--text-faint); font-size:12px;">Fetching community registries…</div>';
+  commGrid.innerHTML = '<div style="color:var(--text-faint); font-size:12px;"><span class="loading">Fetching community registries</span></div>';
   const commRes = await window.api.listCommunityScripts();
   commGrid.innerHTML = '';
   if (!commRes || !commRes.success) {
@@ -899,7 +901,7 @@ async function renderDevelop(root) {
     const btn = document.createElement('button'); btn.className = 'gh-btn compact'; btn.textContent = 'Fork & Edit';
     btn.onclick = async () => {
       const original = btn.textContent;
-      btn.textContent = 'Forking…'; btn.disabled = true;
+      btn.innerHTML = '<span class="loading">Forking</span>'; btn.disabled = true;
       const r = await window.api.downloadCommunityScript(s.download_url, s.name);
       if (!r || !r.success) {
         alert((r && r.error) || 'Fork failed');
@@ -955,7 +957,7 @@ function openNewScriptModal() {
 // write your script here
 `;
     const createBtn = bd.querySelector('#ns-create');
-    createBtn.textContent = 'Creating…'; createBtn.disabled = true;
+    createBtn.innerHTML = '<span class="loading">Creating</span>'; createBtn.disabled = true;
     const r = await window.api.saveLocalScript(filename, template);
     if (!r || !r.success) {
       alert('Could not create file: ' + ((r && r.error) || 'unknown'));

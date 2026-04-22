@@ -125,6 +125,21 @@ button, input, select, textarea, .card, .modal, .tag, .gh-btn, .accent-btn { bor
 
 .hairline { height: 1px; background: var(--hair); border: 0; margin: 0; }
 
+/* Animated ellipsis for in-flight loading states. Usage: <span class="loading">Fetching topics</span> */
+@keyframes loadingDots {
+  0%, 24%   { content: ''; }
+  25%, 49%  { content: '.'; }
+  50%, 74%  { content: '..'; }
+  75%, 100% { content: '...'; }
+}
+.loading::after {
+  content: '';
+  display: inline-block;
+  min-width: 1.2em;
+  text-align: left;
+  animation: loadingDots 1.2s infinite;
+}
+
 /* ---------- App shell ---------- */
 .app-frame { height: 100vh; width: 100vw; display: flex; flex-direction: column; border: 1px solid var(--border); }
 
@@ -146,7 +161,7 @@ button, input, select, textarea, .card, .modal, .tag, .gh-btn, .accent-btn { bor
 
 .sidebar { width: 244px; flex-shrink: 0; background: var(--bg-chrome); border-right: 1px solid var(--hair); display: flex; flex-direction: column; user-select: none; }
 .brand-lockup { padding: 22px 20px 28px; display: flex; align-items: center; gap: 10px; }
-.brand-tile { width: 22px; height: 22px; border: 1px solid var(--border-hi); display: flex; align-items: center; justify-content: center; color: var(--accent); }
+.brand-tile { width: 28px; height: 28px; border: 1px solid var(--border-hi); display: flex; align-items: center; justify-content: center; color: var(--accent); flex-shrink: 0; }
 .brand-text { display: flex; flex-direction: column; line-height: 1; }
 .brand-name { font: 600 12px/1 var(--f-sans); letter-spacing: 0.2px; color: var(--text-strong); }
 .brand-ver  { font: 400 10px/1 var(--f-mono); color: var(--text-faint); margin-top: 4px; letter-spacing: 0.3px; }
