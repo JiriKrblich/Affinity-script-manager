@@ -5,5 +5,8 @@ out
 *.log
 Thumbs.db
 
+# Affinity lockfiles (created while a .af is open in the app)
+*.af~lock~
+
 # internal design handoff material, not shipped upstream
 design_temp/
