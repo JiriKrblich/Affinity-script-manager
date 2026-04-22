@@ -91,8 +91,46 @@ function parseCsvTextContent(result) {
   return [...new Set(textChunks.join(",").split(",").map((n) => n.trim()).filter(Boolean))];
 }
 
-async function callTool(client, name, args) {
-  return client.request({ method: "tools/call", params: { name, arguments: args } }, CallToolResultSchema);
+let mcpConnected = false;
+let mcpConnectPromise = null;
+
+// Establish (or re-establish) the MCP session. Safe to call multiple times — concurrent callers
+// share the same in-flight promise. Throws if the bridge is unreachable so callers can surface
+// a real error instead of falling through with a stale client.
+async function ensureMcpConnected() {
+  if (mcpConnected && client && transport) return;
+  if (mcpConnectPromise) return mcpConnectPromise;
+  mcpConnectPromise = (async () => {
+    try {
+      if (transport) { try { await transport.close(); } catch {} }
+      client = new Client({ name: "script-mgr-ui", version: "1.0.0" });
+      transport = new SSEClientTransport(new URL(SERVER_URL));
+      await client.connect(transport);
+      mcpConnected = true;
+    } catch (err) {
+      mcpConnected = false;
+      throw err;
+    } finally {
+      mcpConnectPromise = null;
+    }
+  })();
+  return mcpConnectPromise;
+}
+
+async function callTool(_clientIgnored, name, args) {
+  await ensureMcpConnected();
+  try {
+    return await client.request({ method: "tools/call", params: { name, arguments: args } }, CallToolResultSchema);
+  } catch (err) {
+    // If the session dropped (bridge restarted, etc.), reconnect once and retry.
+    const msg = (err && err.message) ? err.message : String(err);
+    if (/session not initialized|not connected|disconnected|closed/i.test(msg)) {
+      mcpConnected = false;
+      await ensureMcpConnected();
+      return client.request({ method: "tools/call", params: { name, arguments: args } }, CallToolResultSchema);
+    }
+    throw err;
+  }
 }
 
 // --- Bezpečná správa konfigurace ---
@@ -171,9 +209,10 @@ app.whenReady().then(async () => {
   configPath = path.join(app.getPath('userData'), 'config.json');
   await fs.mkdir(localScriptsDir, { recursive: true });
 
-  client = new Client({ name: "script-mgr-ui", version: "1.0.0" });
-  transport = new SSEClientTransport(new URL(SERVER_URL));
-  await client.connect(transport).catch(console.error);
+  // Eagerly attempt to connect so the Server Bridge status is accurate on first paint;
+  // failure is non-fatal — ensureMcpConnected() will retry on demand when a tool call
+  // happens (user opens Documentation, SDK search, etc.).
+  ensureMcpConnected().catch((err) => console.warn('[MCP] initial connect failed:', err.message));
 
   startWatcher(); // fire-and-forget
 
