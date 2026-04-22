@@ -7,7 +7,13 @@ const state = {
   communitySort: 'name',
   installedIds: new Set(),
   sdkModule: null,
+  editorFile: null,
+  editorDirty: false,
+  editorOrigin: 'local', // 'local' | 'develop' — where the editor's Back button should return to
 };
+
+// Live Ace editor instance (outside `state` so it's not treated as declarative UI state).
+let activeEditor = null;
 
 const NAV_SECTIONS = [
   { label: 'Library',  items: [
@@ -16,6 +22,9 @@ const NAV_SECTIONS = [
   ]},
   { label: 'Discover', items: [
     { id: 'community', name: 'Community',      icon: 'compass' },
+  ]},
+  { label: 'Development', items: [
+    { id: 'develop',   name: 'Code Editor',    icon: 'code' },
   ]},
   { label: 'Support',  items: [
     { id: 'docs',      name: 'Documentation',  icon: 'book' },
@@ -26,6 +35,8 @@ const NAV_SECTIONS = [
 function renderNav() {
   const nav = document.getElementById('nav');
   nav.innerHTML = '';
+  // Editor is a sub-flow — highlight the section the user came from (Local or Development).
+  const effectiveNav = state.nav === 'editor' ? (state.editorOrigin || 'local') : state.nav;
   for (const s of NAV_SECTIONS) {
     const sec = document.createElement('div');
     sec.className = 'nav-section';
@@ -35,7 +46,7 @@ function renderNav() {
     sec.appendChild(hdr);
     for (const it of s.items) {
       const btn = document.createElement('button');
-      btn.className = 'nav-item' + (state.nav === it.id ? ' active' : '');
+      btn.className = 'nav-item' + (effectiveNav === it.id ? ' active' : '');
       btn.dataset.nav = it.id;
       btn.appendChild(Ico(it.icon, { size: 14 }));
       const lbl = document.createElement('span'); lbl.className = 'label'; lbl.textContent = it.name;
@@ -52,6 +63,10 @@ function renderNav() {
 }
 
 function navigate(id) {
+  if (state.nav === 'editor' && state.editorDirty && id !== 'editor') {
+    if (!confirm('You have unsaved changes. Discard and leave the editor?')) return;
+    state.editorDirty = false;
+  }
   state.nav = id;
   renderNav();
   renderScreen();
@@ -59,11 +74,23 @@ function navigate(id) {
 
 async function renderScreen() {
   const main = document.getElementById('main');
+  // Tear down any prior Ace instance so it doesn't leak or double-mount.
+  if (activeEditor) {
+    try { activeEditor.destroy(); activeEditor.container.remove(); } catch {}
+    activeEditor = null;
+  }
   main.innerHTML = '';
   main.scrollTop = 0;
-  const dispatch = { local: renderLocal, bridge: renderBridge, community: renderCommunity, docs: renderDocs, sdk: renderSdk };
+  const dispatch = { local: renderLocal, bridge: renderBridge, community: renderCommunity, develop: renderDevelop, docs: renderDocs, sdk: renderSdk, editor: renderEditor };
   const fn = dispatch[state.nav] || renderLocal;
   await fn(main);
+}
+
+function openEditor(filename, origin = 'local') {
+  state.editorFile = filename;
+  state.editorDirty = false;
+  state.editorOrigin = origin;
+  navigate('editor');
 }
 
 function stubScreen(root, eyebrow, title) {
@@ -229,6 +256,10 @@ async function renderLocal(root) {
       b.onclick = onClick;
       return b;
     };
+    actions.appendChild(mkBtn('edit', 'Edit script', (e) => {
+      e.stopPropagation();
+      openEditor(it.file, 'local');
+    }));
     actions.appendChild(mkBtn('push', 'Push to Bridge', async (e) => {
       e.stopPropagation();
       const r = await window.api.pushToMcp(it.file);
@@ -696,4 +727,245 @@ function updateNavCount(id, count) {
     item.appendChild(slot);
   }
   slot.textContent = (count == null) ? '' : count;
+}
+
+// ---------- Editor screen ----------
+async function renderEditor(root) {
+  const filename = state.editorFile;
+  if (!filename) { state.nav = 'local'; return renderScreen(); }
+
+  const screen = document.createElement('div'); screen.className = 'editor-screen';
+  const origin = state.editorOrigin || 'local';
+  const backLabel = origin === 'develop' ? '← Back to Code Editor' : '← Back to Local Scripts';
+  screen.innerHTML = `
+    <div class="editor-header">
+      <button class="gh-btn compact" id="ed-back">${backLabel}</button>
+      <div class="editor-filename"><span class="ed-dirty" id="ed-dirty"></span>${escapeHtml(filename)}</div>
+      <button class="accent-btn compact" id="ed-save" disabled>Save</button>
+    </div>
+    <div class="editor-host" id="editor-host"></div>
+  `;
+  root.appendChild(screen);
+
+  const backBtn  = screen.querySelector('#ed-back');
+  const saveBtn  = screen.querySelector('#ed-save');
+  const dirtyEl  = screen.querySelector('#ed-dirty');
+  const host     = screen.querySelector('#editor-host');
+  backBtn.onclick = () => navigate(origin);
+
+  if (!window.ace) {
+    host.innerHTML = `<div style="padding:40px; color:var(--danger-text); font-size:13px;">
+      Ace Editor failed to load (CDN unreachable?). Edit the file externally — watch mode will pick up changes automatically.
+    </div>`;
+    return;
+  }
+
+  const res = await window.api.readLocalScript(filename);
+  if (!res || !res.success) {
+    host.innerHTML = `<div style="padding:40px; color:var(--danger-text); font-size:13px;">Error: ${escapeHtml((res && res.error) || 'Could not read file')}</div>`;
+    return;
+  }
+
+  activeEditor = ace.edit(host, {
+    mode: 'ace/mode/javascript',
+    theme: 'ace/theme/tomorrow_night',
+    tabSize: 2,
+    useSoftTabs: true,
+    fontSize: '13px',
+    showPrintMargin: false,
+    fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
+  });
+  activeEditor.setValue(res.data.code || '', -1); // -1 puts the cursor at the start instead of selecting all
+  activeEditor.focus();
+
+  const markDirty = (b) => {
+    state.editorDirty = b;
+    dirtyEl.textContent = b ? '● ' : '';
+    saveBtn.disabled = !b;
+  };
+  markDirty(false);
+
+  activeEditor.session.on('change', () => {
+    if (!state.editorDirty) markDirty(true);
+  });
+
+  const save = async () => {
+    if (!activeEditor) return;
+    const code = activeEditor.getValue();
+    const originalLabel = saveBtn.textContent;
+    saveBtn.textContent = 'Saving…'; saveBtn.disabled = true;
+    const r = await window.api.saveLocalScript(filename, code);
+    if (!r || !r.success) {
+      alert('Save failed: ' + ((r && r.error) || 'unknown error'));
+      saveBtn.textContent = originalLabel; saveBtn.disabled = false;
+      return;
+    }
+    markDirty(false);
+    saveBtn.textContent = originalLabel;
+  };
+
+  activeEditor.commands.addCommand({
+    name: 'save',
+    bindKey: { win: 'Ctrl-S', mac: 'Cmd-S' },
+    exec: save,
+  });
+  saveBtn.onclick = save;
+}
+
+// ---------- Code Editor (Development) screen ----------
+async function renderDevelop(root) {
+  const screen = document.createElement('div'); screen.className = 'screen';
+  screen.innerHTML = `
+    <div class="eyebrow">Development</div>
+    <div class="screen-header">
+      <div>
+        <h1 style="margin-bottom:6px">Code Editor</h1>
+        <p class="subhead" style="margin:0">Create a new script from scratch, or pick an existing one to edit. Changes save to disk and auto-push to the bridge via watch mode.</p>
+      </div>
+      <div class="actions">
+        <button class="accent-btn compact" id="btn-new-script"><span id="ico-new-plus"></span> New Script</button>
+      </div>
+    </div>
+
+    <div class="eyebrow" style="margin-bottom:12px">Local Scripts</div>
+    <div class="card-grid" id="dev-local"></div>
+
+    <div class="eyebrow" style="margin:28px 0 12px">Community — Fork &amp; Edit</div>
+    <div class="card-grid" id="dev-community"></div>
+  `;
+  root.appendChild(screen);
+  screen.querySelector('#ico-new-plus').appendChild(Ico('plus', { size: 12, sw: 1.8 }));
+  screen.querySelector('#btn-new-script').onclick = openNewScriptModal;
+
+  // Local scripts section
+  const localGrid = screen.querySelector('#dev-local');
+  const localRes = await window.api.listLocalScripts();
+  if (!localRes.success) {
+    localGrid.innerHTML = `<div style="color:var(--danger-text); font-size:12px;">Error: ${escapeHtml(localRes.error)}</div>`;
+  } else if (localRes.data.length === 0) {
+    localGrid.innerHTML = `<div style="color:var(--text-faint); font-size:12px; grid-column:1/-1;">No local scripts yet. Click "New Script" to create one.</div>`;
+  } else {
+    for (const it of localRes.data) {
+      const c = document.createElement('div'); c.className = 'card';
+      const title = document.createElement('div'); title.className = 'card-title';
+      title.appendChild(Ico('file', { size: 14 }));
+      const span = document.createElement('span'); span.textContent = it.name; title.appendChild(span);
+      c.appendChild(title);
+      if (it.description) {
+        const desc = document.createElement('div');
+        desc.style.cssText = 'font-size:12px; color:var(--text); margin-bottom:14px; line-height:1.55;';
+        desc.textContent = it.description;
+        c.appendChild(desc);
+      }
+      const spacer = document.createElement('div'); spacer.style.flex = '1'; c.appendChild(spacer);
+      const btn = document.createElement('button'); btn.className = 'gh-btn compact'; btn.textContent = 'Edit';
+      btn.onclick = () => openEditor(it.file, 'develop');
+      c.appendChild(btn);
+      localGrid.appendChild(c);
+    }
+  }
+
+  // Community section
+  const commGrid = screen.querySelector('#dev-community');
+  commGrid.innerHTML = '<div style="color:var(--text-faint); font-size:12px;">Fetching community registries…</div>';
+  const commRes = await window.api.listCommunityScripts();
+  commGrid.innerHTML = '';
+  if (!commRes || !commRes.success) {
+    commGrid.innerHTML = `<div style="color:var(--danger-text); font-size:12px;">Error: ${escapeHtml((commRes && commRes.error) || 'failed')}</div>`;
+    return;
+  }
+  const scripts = commRes.data || [];
+  if (scripts.length === 0) {
+    commGrid.innerHTML = `<div style="color:var(--text-faint); font-size:12px; grid-column:1/-1;">No community scripts.</div>`;
+    return;
+  }
+  for (const s of scripts) {
+    const c = document.createElement('div'); c.className = 'card';
+    const title = document.createElement('div'); title.className = 'card-title';
+    title.appendChild(Ico('file', { size: 14 }));
+    const span = document.createElement('span'); span.textContent = s.name || '(untitled)'; title.appendChild(span);
+    c.appendChild(title);
+    const author = document.createElement('div');
+    author.style.cssText = 'font: 400 11px/1 var(--f-mono); color: var(--text-dim); margin-bottom: 10px;';
+    author.textContent = 'by ' + (s.author || 'community');
+    c.appendChild(author);
+    if (s.description) {
+      const desc = document.createElement('div');
+      desc.style.cssText = 'font-size:12px; color:var(--text); margin-bottom:14px; line-height:1.55;';
+      desc.textContent = s.description;
+      c.appendChild(desc);
+    }
+    const spacer = document.createElement('div'); spacer.style.flex = '1'; c.appendChild(spacer);
+    const btn = document.createElement('button'); btn.className = 'gh-btn compact'; btn.textContent = 'Fork & Edit';
+    btn.onclick = async () => {
+      const original = btn.textContent;
+      btn.textContent = 'Forking…'; btn.disabled = true;
+      const r = await window.api.downloadCommunityScript(s.download_url, s.name);
+      if (!r || !r.success) {
+        alert((r && r.error) || 'Fork failed');
+        btn.textContent = original; btn.disabled = false;
+        return;
+      }
+      // Same filename-sanitisation rule as main.js uses for download-community-script.
+      const safe = (s.name || 'script').toLowerCase().replace(/[^a-z0-9_-]/g, '-') + '.js';
+      openEditor(safe, 'develop');
+    };
+    c.appendChild(btn);
+    commGrid.appendChild(c);
+  }
+}
+
+// "New Script" modal — asks for a filename, seeds a header template, opens editor.
+function openNewScriptModal() {
+  const bd = document.createElement('div'); bd.className = 'modal-backdrop';
+  bd.innerHTML = `
+    <div class="modal" style="max-width:460px">
+      <div class="modal-head"><h3>New Script</h3></div>
+      <div class="modal-body">
+        <p>Creates a <span style="font-family:var(--f-mono); color:var(--text-strong);">.js</span> file in your local library with a metadata header, then opens it in the editor.</p>
+        <div><label>Script name</label><input id="ns-name" type="text" placeholder="my-new-script" autofocus></div>
+      </div>
+      <div class="modal-foot">
+        <button class="gh-btn" id="ns-cancel">Cancel</button>
+        <button class="accent-btn" id="ns-create">Create &amp; Open</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bd);
+  const close = () => bd.remove();
+  bd.querySelector('#ns-cancel').onclick = close;
+  bd.addEventListener('click', (e) => { if (e.target === bd) close(); });
+  const nameInput = bd.querySelector('#ns-name');
+  setTimeout(() => nameInput.focus(), 0);
+
+  const submit = async () => {
+    const raw = nameInput.value.trim();
+    if (!raw) { nameInput.focus(); return; }
+    // Strip trailing .js if user typed it, sanitise, re-append .js.
+    const base = raw.replace(/\.js$/i, '').toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/^-+|-+$/g, '');
+    if (!base) { alert('Please enter a valid script name (letters, numbers, dashes).'); return; }
+    const filename = base + '.js';
+    const prettyName = raw.replace(/\.js$/i, '');
+    const template = `/**
+ * name: ${prettyName}
+ * description:
+ * version: 1.0.0
+ * author:
+ */
+
+// write your script here
+`;
+    const createBtn = bd.querySelector('#ns-create');
+    createBtn.textContent = 'Creating…'; createBtn.disabled = true;
+    const r = await window.api.saveLocalScript(filename, template);
+    if (!r || !r.success) {
+      alert('Could not create file: ' + ((r && r.error) || 'unknown'));
+      createBtn.textContent = 'Create & Open'; createBtn.disabled = false;
+      return;
+    }
+    close();
+    openEditor(filename, 'develop');
+  };
+
+  bd.querySelector('#ns-create').onclick = submit;
+  nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
 }

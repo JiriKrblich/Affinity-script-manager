@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld('api', {
   // --- Lokální skripty ---
   listLocalScripts: () => ipcRenderer.invoke('list-local-scripts'),
   deleteLocalScript: (filename) => ipcRenderer.invoke('delete-local-script', filename),
+  readLocalScript: (filename) => ipcRenderer.invoke('read-local-script', filename),
+  saveLocalScript: (filename, code) => ipcRenderer.invoke('save-local-script', filename, code),
   selectFile: () => ipcRenderer.invoke('select-file'),
   exportToDisk: (filename) => ipcRenderer.invoke('export-to-disk', filename),
   pushToMcp: (filename) => ipcRenderer.invoke('push-to-mcp', filename),

@@ -222,6 +222,20 @@ app.whenReady().then(async () => {
     } catch (e) { return { success: false, error: e.message }; }
   });
 
+  ipcMain.handle('read-local-script', async (e, filename) => {
+    try {
+      const code = await fs.readFile(path.join(localScriptsDir, filename), 'utf8');
+      return { success: true, data: { code } };
+    } catch (err) { return { success: false, error: err.message }; }
+  });
+
+  ipcMain.handle('save-local-script', async (e, filename, code) => {
+    try {
+      await fs.writeFile(path.join(localScriptsDir, filename), code, 'utf8');
+      return { success: true };
+    } catch (err) { return { success: false, error: err.message }; }
+  });
+
   ipcMain.handle('select-file', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog(win, { 
       properties: ['openFile'], 
