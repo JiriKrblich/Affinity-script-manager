@@ -106,6 +106,17 @@ async function ensureMcpConnected() {
       client = new Client({ name: "script-mgr-ui", version: "1.0.0" });
       transport = new SSEClientTransport(new URL(SERVER_URL));
       await client.connect(transport);
+      // Affinity's MCP requires reading the preamble doc once per session before other
+      // SDK-doc tools will return real data — otherwise list_sdk_documentation etc. respond
+      // with an "ERROR: Listing failed" payload. Prime it best-effort.
+      try {
+        await client.request(
+          { method: "tools/call", params: { name: "read_sdk_documentation_topic", arguments: { filename: "preamble" } } },
+          CallToolResultSchema
+        );
+      } catch (primeErr) {
+        console.warn('[MCP] preamble prime failed:', primeErr.message);
+      }
       mcpConnected = true;
     } catch (err) {
       mcpConnected = false;
@@ -463,12 +474,22 @@ app.whenReady().then(async () => {
   ipcMain.handle('fetch-docs', async () => {
     try {
       const listResult = await callTool(client, "list_sdk_documentation", {});
-      const fileNames = parseCsvTextContent(listResult);
+      const rawText = getTextContent(listResult).trim();
+      // Affinity's tools occasionally return an error message as content with a successful RPC.
+      if (!rawText || /^error[:\s]/i.test(rawText)) {
+        return { success: false, error: 'Affinity did not return a topic list: ' + (rawText || 'empty response') };
+      }
+      const fileNames = parseCsvTextContent(listResult)
+        .filter(n => n && !/^error/i.test(n) && n !== 'preamble'); // preamble is an init marker, not a user-facing topic
       const docs = [];
       for (const fileName of fileNames) {
         try {
           const readResult = await callTool(client, "read_sdk_documentation_topic", { filename: fileName });
-          docs.push({ title: fileName, content: getTextContent(readResult) });
+          const content = getTextContent(readResult);
+          // Skip topics whose content is itself an error response.
+          if (content && !/^error[:\s]/i.test(content.trim())) {
+            docs.push({ title: fileName, content });
+          }
         } catch (e) {}
       }
       return { success: true, data: docs };
