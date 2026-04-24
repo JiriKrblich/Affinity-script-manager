@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld('api', {
   // --- Lokální skripty ---
   listLocalScripts: () => ipcRenderer.invoke('list-local-scripts'),
   deleteLocalScript: (filename) => ipcRenderer.invoke('delete-local-script', filename),
+  readLocalScript: (filename) => ipcRenderer.invoke('read-local-script', filename),
+  saveLocalScript: (filename, code) => ipcRenderer.invoke('save-local-script', filename, code),
   selectFile: () => ipcRenderer.invoke('select-file'),
   exportToDisk: (filename) => ipcRenderer.invoke('export-to-disk', filename),
   pushToMcp: (filename) => ipcRenderer.invoke('push-to-mcp', filename),
@@ -32,5 +34,18 @@ contextBridge.exposeInMainWorld('api', {
   // --- Systémové (Aktualizace) ---
   checkUpdates: () => ipcRenderer.invoke('check-updates'),
   onUpdateAvailable: (callback) => ipcRenderer.on('update-available', (event, url, version) => callback(url, version)),
+  windowMin:   () => ipcRenderer.send('window-min'),
+  windowMax:   () => ipcRenderer.send('window-max'),
+  windowClose: () => ipcRenderer.send('window-close'),
+
+  // --- Titlebar menus ---
+  showMenu:     (name, x, y) => ipcRenderer.send('show-menu', name, x, y),
+  onMenuAction: (callback) => ipcRenderer.on('menu-action', (_, action) => callback(action)),
+
+  // --- Watch mode ---
+  onLocalScriptsChanged: (callback) => ipcRenderer.on('local-scripts-changed', () => callback()),
+
   openUrl: (url) => ipcRenderer.send('open-url', url)
 });
+
+contextBridge.exposeInMainWorld('appVersion', ipcRenderer.sendSync('app-version-sync'));

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const { Client } = require("@modelcontextprotocol/sdk/client/index.js");
@@ -13,7 +13,73 @@ let transport;
 let localScriptsDir;
 let configPath;
 let win; 
-let settingsWin = null; 
+let settingsWin = null;
+ipcMain.on('app-version-sync', (e) => { e.returnValue = app.getVersion(); });
+
+// --- Titlebar menu popups ---
+function buildMenu(name, targetWin) {
+  const sendAction = (action) => () => targetWin && targetWin.webContents.send('menu-action', action);
+  const templates = {
+    file: [
+      { label: 'New Script…',           accelerator: 'CmdOrCtrl+N', click: sendAction('new-script') },
+      { label: 'Reveal Scripts Folder', click: () => { if (localScriptsDir) shell.openPath(localScriptsDir).catch(() => {}); } },
+      { type: 'separator' },
+      { label: 'Quit', accelerator: process.platform === 'darwin' ? 'Cmd+Q' : 'Ctrl+Q', click: () => app.quit() },
+    ],
+    edit: [
+      { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
+      { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' },
+    ],
+    view: [
+      { label: 'Reload',          accelerator: 'CmdOrCtrl+R',       click: () => targetWin && targetWin.reload() },
+      { label: 'Force Reload',    accelerator: 'CmdOrCtrl+Shift+R', click: () => targetWin && targetWin.webContents.reloadIgnoringCache() },
+      { label: 'Toggle DevTools', accelerator: process.platform === 'darwin' ? 'Alt+Cmd+I' : 'Ctrl+Shift+I', click: () => targetWin && targetWin.webContents.toggleDevTools() },
+      { type: 'separator' },
+      { role: 'resetZoom', label: 'Actual Size' },
+      { role: 'zoomIn',    label: 'Zoom In'     },
+      { role: 'zoomOut',   label: 'Zoom Out'    },
+    ],
+    run: [
+      { label: 'Refresh Bridge',    click: sendAction('refresh-bridge') },
+      { label: 'Refresh Community', click: sendAction('refresh-community') },
+      { type: 'separator' },
+      { label: 'Open Settings…',    click: sendAction('open-settings') },
+    ],
+    window: [
+      { role: 'minimize' },
+      { label: 'Close', accelerator: 'CmdOrCtrl+W', click: () => targetWin && targetWin.close() },
+    ],
+    help: [
+      { label: 'Documentation', click: sendAction('nav-docs') },
+      { label: 'SDK Reference', click: sendAction('nav-sdk')  },
+      { type: 'separator' },
+      { label: 'Affinity Community on GitHub', click: () => shell.openExternal('https://github.com/JiriKrblich/Affinity-Community-Scripts') },
+      { label: 'Script Manager on GitHub',      click: () => shell.openExternal('https://github.com/JiriKrblich/Affinity-script-manager') },
+      { type: 'separator' },
+      { label: 'Check for Updates…', click: sendAction('check-updates') },
+      { label: 'About Script Manager', click: () => {
+        dialog.showMessageBox(targetWin, {
+          type: 'info',
+          title: 'About Script Manager',
+          message: 'Affinity Script Manager',
+          detail: `Version ${app.getVersion()}\n\nGraphic UI for uploading and downloading Affinity app scripts.\n\nMCP bridge: localhost:6767`,
+          buttons: ['OK'],
+        });
+      }},
+    ],
+  };
+  const tpl = templates[name];
+  if (!tpl) return null;
+  return Menu.buildFromTemplate(tpl);
+}
+
+ipcMain.on('show-menu', (e, name, x, y) => {
+  const targetWin = BrowserWindow.fromWebContents(e.sender);
+  if (!targetWin) return;
+  const menu = buildMenu(name, targetWin);
+  if (!menu) return;
+  menu.popup({ window: targetWin, x: Math.round(x), y: Math.round(y) });
+});
 
 // --- Helper Functions ---
 function getTextContent(result) {
@@ -25,8 +91,57 @@ function parseCsvTextContent(result) {
   return [...new Set(textChunks.join(",").split(",").map((n) => n.trim()).filter(Boolean))];
 }
 
-async function callTool(client, name, args) {
-  return client.request({ method: "tools/call", params: { name, arguments: args } }, CallToolResultSchema);
+let mcpConnected = false;
+let mcpConnectPromise = null;
+
+// Establish (or re-establish) the MCP session. Safe to call multiple times — concurrent callers
+// share the same in-flight promise. Throws if the bridge is unreachable so callers can surface
+// a real error instead of falling through with a stale client.
+async function ensureMcpConnected() {
+  if (mcpConnected && client && transport) return;
+  if (mcpConnectPromise) return mcpConnectPromise;
+  mcpConnectPromise = (async () => {
+    try {
+      if (transport) { try { await transport.close(); } catch {} }
+      client = new Client({ name: "script-mgr-ui", version: "1.0.0" });
+      transport = new SSEClientTransport(new URL(SERVER_URL));
+      await client.connect(transport);
+      // Affinity's MCP requires reading the preamble doc once per session before other
+      // SDK-doc tools will return real data — otherwise list_sdk_documentation etc. respond
+      // with an "ERROR: Listing failed" payload. Prime it best-effort.
+      try {
+        await client.request(
+          { method: "tools/call", params: { name: "read_sdk_documentation_topic", arguments: { filename: "preamble" } } },
+          CallToolResultSchema
+        );
+      } catch (primeErr) {
+        console.warn('[MCP] preamble prime failed:', primeErr.message);
+      }
+      mcpConnected = true;
+    } catch (err) {
+      mcpConnected = false;
+      throw err;
+    } finally {
+      mcpConnectPromise = null;
+    }
+  })();
+  return mcpConnectPromise;
+}
+
+async function callTool(_clientIgnored, name, args) {
+  await ensureMcpConnected();
+  try {
+    return await client.request({ method: "tools/call", params: { name, arguments: args } }, CallToolResultSchema);
+  } catch (err) {
+    // If the session dropped (bridge restarted, etc.), reconnect once and retry.
+    const msg = (err && err.message) ? err.message : String(err);
+    if (/session not initialized|not connected|disconnected|closed/i.test(msg)) {
+      mcpConnected = false;
+      await ensureMcpConnected();
+      return client.request({ method: "tools/call", params: { name, arguments: args } }, CallToolResultSchema);
+    }
+    throw err;
+  }
 }
 
 // --- Bezpečná správa konfigurace ---
@@ -57,17 +172,66 @@ async function saveConfig(config) {
   await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
 }
 
+// --- Watch mode: re-push edited scripts to the bridge and notify the renderer ---
+async function startWatcher() {
+  const pending = new Map(); // filename -> timer (debounce)
+
+  const handleChange = async (filename) => {
+    if (!filename || !filename.endsWith('.js')) return;
+    const full = path.join(localScriptsDir, filename);
+    let exists = false;
+    try { await fs.stat(full); exists = true; } catch {}
+
+    if (exists) {
+      try {
+        const code = await fs.readFile(full, 'utf8');
+        const title = path.parse(filename).name;
+        await callTool(client, "save_script_to_library", {
+          title,
+          description: "Updated via Script Manager watch mode",
+          code,
+        }).catch(() => {}); // best-effort: bridge may be offline
+      } catch {}
+    }
+    if (win && !win.isDestroyed()) win.webContents.send('local-scripts-changed');
+  };
+
+  const debounced = (filename) => {
+    const prev = pending.get(filename);
+    if (prev) clearTimeout(prev);
+    pending.set(filename, setTimeout(() => {
+      pending.delete(filename);
+      handleChange(filename);
+    }, 300));
+  };
+
+  try {
+    const watcher = fs.watch(localScriptsDir);
+    for await (const { filename } of watcher) {
+      debounced(filename);
+    }
+  } catch (err) {
+    console.warn('watch mode error:', err.message);
+  }
+}
+
 app.whenReady().then(async () => {
   localScriptsDir = path.join(app.getPath('userData'), 'MyScripts');
   configPath = path.join(app.getPath('userData'), 'config.json');
   await fs.mkdir(localScriptsDir, { recursive: true });
 
-  client = new Client({ name: "script-mgr-ui", version: "1.0.0" });
-  transport = new SSEClientTransport(new URL(SERVER_URL));
-  await client.connect(transport).catch(console.error);
+  // Eagerly attempt to connect so the Server Bridge status is accurate on first paint;
+  // failure is non-fatal — ensureMcpConnected() will retry on demand when a tool call
+  // happens (user opens Documentation, SDK search, etc.).
+  ensureMcpConnected().catch((err) => console.warn('[MCP] initial connect failed:', err.message));
+
+  startWatcher(); // fire-and-forget
 
   win = new BrowserWindow({
-    width: 1100, height: 800, title: "Affinity Script Manager",
+    width: 1200, height: 820, title: "Affinity Script Manager",
+    frame: false,
+    minWidth: 960, minHeight: 600,
+    backgroundColor: '#1f1f1f',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true }
   });
 
@@ -77,8 +241,27 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('list-local-scripts', async () => {
     try {
-      const files = await fs.readdir(localScriptsDir);
-      return { success: true, data: files.filter(f => f.endsWith('.js')) };
+      const files = (await fs.readdir(localScriptsDir)).filter(f => f.endsWith('.js'));
+      const out = [];
+      for (const file of files) {
+        const full = path.join(localScriptsDir, file);
+        const stat = await fs.stat(full);
+        let name = path.parse(file).name;
+        let description = '';
+        let version = '';
+        try {
+          const head = (await fs.readFile(full, 'utf8')).slice(0, 4096);
+          const m = head.match(/^\s*\/\*\*([\s\S]*?)\*\//);
+          if (m) {
+            const h = m[1];
+            const n = h.match(/name:\s*(.+)/i);         if (n) name = n[1].trim();
+            const d = h.match(/description:\s*(.+)/i);   if (d) description = d[1].trim();
+            const v = h.match(/version:\s*(.+)/i);       if (v) version = v[1].trim();
+          }
+        } catch {}
+        out.push({ file, name, description, version, size: stat.size, modified: stat.mtimeMs });
+      }
+      return { success: true, data: out };
     } catch (e) { return { success: false, error: e.message }; }
   });
 
@@ -87,6 +270,20 @@ app.whenReady().then(async () => {
       await fs.unlink(path.join(localScriptsDir, filename));
       return { success: true };
     } catch (e) { return { success: false, error: e.message }; }
+  });
+
+  ipcMain.handle('read-local-script', async (e, filename) => {
+    try {
+      const code = await fs.readFile(path.join(localScriptsDir, filename), 'utf8');
+      return { success: true, data: { code } };
+    } catch (err) { return { success: false, error: err.message }; }
+  });
+
+  ipcMain.handle('save-local-script', async (e, filename, code) => {
+    try {
+      await fs.writeFile(path.join(localScriptsDir, filename), code, 'utf8');
+      return { success: true };
+    } catch (err) { return { success: false, error: err.message }; }
   });
 
   ipcMain.handle('select-file', async () => {
@@ -277,12 +474,22 @@ app.whenReady().then(async () => {
   ipcMain.handle('fetch-docs', async () => {
     try {
       const listResult = await callTool(client, "list_sdk_documentation", {});
-      const fileNames = parseCsvTextContent(listResult);
+      const rawText = getTextContent(listResult).trim();
+      // Affinity's tools occasionally return an error message as content with a successful RPC.
+      if (!rawText || /^error[:\s]/i.test(rawText)) {
+        return { success: false, error: 'Affinity did not return a topic list: ' + (rawText || 'empty response') };
+      }
+      const fileNames = parseCsvTextContent(listResult)
+        .filter(n => n && !/^error/i.test(n) && n !== 'preamble'); // preamble is an init marker, not a user-facing topic
       const docs = [];
       for (const fileName of fileNames) {
         try {
           const readResult = await callTool(client, "read_sdk_documentation_topic", { filename: fileName });
-          docs.push({ title: fileName, content: getTextContent(readResult) });
+          const content = getTextContent(readResult);
+          // Skip topics whose content is itself an error response.
+          if (content && !/^error[:\s]/i.test(content.trim())) {
+            docs.push({ title: fileName, content });
+          }
         } catch (e) {}
       }
       return { success: true, data: docs };
@@ -337,6 +544,10 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('check-updates', async () => await checkForUpdates(true));
   win.webContents.once('did-finish-load', () => checkForUpdates(false));
+
+  ipcMain.on('window-min',   () => win.minimize());
+  ipcMain.on('window-max',   () => { win.isMaximized() ? win.unmaximize() : win.maximize(); });
+  ipcMain.on('window-close', () => win.close());
 
   win.loadFile('index.html');
 });
