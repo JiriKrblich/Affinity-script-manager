@@ -169,7 +169,7 @@ app.whenReady().then(async () => {
   startWatcher(); // fire-and-forget
 
   win = new BrowserWindow({
-    width: 1200, height: 820, title: "Affinity Script Manager",
+    width: 1200, height: 820, title: "Script Manager for Affinity",
     minWidth: 960, minHeight: 600,
     backgroundColor: '#1f1f1f',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true }
