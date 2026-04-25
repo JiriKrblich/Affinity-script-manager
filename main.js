@@ -407,7 +407,7 @@ app.whenReady().then(async () => {
   // --- DOCUMENTATION, SEARCH & UPDATES ---
   // ==========================================
 
-  ipcMain.on('open-external-repo', () => shell.openExternal('https://github.com/JiriKrblich/Affinity-Community-Scripts/issues/new'));
+  ipcMain.on('open-external-repo', () => shell.openExternal('https://github.com/JiriKrblich/Affinity-Community-Scripts/issues/new?template=contribute-script.md'));
   ipcMain.on('open-url', (event, url) => shell.openExternal(url));
 
   ipcMain.handle('fetch-docs', async () => {
