@@ -1,141 +1,556 @@
 <!DOCTYPE html>
-<html lang="en" class="scroll-smooth">
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Script Manager - The Ultimate GUI for Affinity Scripts</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        body { font-family: 'Inter', sans-serif; }
-        .gradient-text {
-            background-clip: text;
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Script Manager for Affinity — The GUI for Affinity Scripts</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700;9..144,800;9..144,900&family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0c0c0b;
+      --bg-card:   #141413;
+      --bg-raised: #1a1a18;
+      --border:    #242422;
+      --border-hi: #333330;
+      --text:      #c8c8c0;
+      --text-dim:  #666660;
+      --text-strong: #e8e8e0;
+      --accent:    #8EF260;
+      --accent-dim: rgba(142,242,96,0.08);
+      --accent-mid: rgba(142,242,96,0.15);
+      --f-display: 'Fraunces', Georgia, serif;
+      --f-body:    'Inter', system-ui, -apple-system, sans-serif;
+      --f-mono:    'JetBrains Mono', monospace;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--f-body);
+      font-size: 15px;
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(142,242,96,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(142,242,96,0.025) 1px, transparent 1px);
+      background-size: 48px 48px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container { max-width: 1080px; margin: 0 auto; padding: 0 32px; position: relative; z-index: 1; }
+    .accent, em, .highlight-em, h1 em, h2 em, .section-title em {
+      color: var(--accent);
+      font-style: italic;
+    }
+    a { color: inherit; text-decoration: none; }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(18px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .fade-1 { animation: fadeUp .55s ease both; }
+    .fade-2 { animation: fadeUp .55s .1s ease both; }
+    .fade-3 { animation: fadeUp .55s .2s ease both; }
+    .fade-4 { animation: fadeUp .55s .32s ease both; }
+    .fade-5 { animation: fadeUp .55s .44s ease both; }
+
+    /* NAV */
+    nav {
+      position: relative;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 24px 32px;
+      max-width: 1080px;
+      margin: 0 auto;
+    }
+    .nav-logo {
+      font-family: var(--f-body);
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-strong);
+      letter-spacing: -0.01em;
+    }
+    .nav-links { display: flex; align-items: center; gap: 28px; }
+    .nav-links a {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-dim);
+      transition: color .18s;
+    }
+    .nav-links a:hover { color: var(--text-strong); }
+    .nav-gh {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 14px;
+      border: 1px solid var(--border-hi);
+      border-radius: 6px;
+      font-size: 13px !important;
+      color: var(--text) !important;
+      background: var(--bg-raised);
+      transition: border-color .18s, background .18s !important;
+    }
+    .nav-gh:hover { border-color: var(--accent) !important; background: var(--accent-dim) !important; color: var(--accent) !important; }
+
+    /* HERO */
+    header {
+      position: relative;
+      z-index: 1;
+      padding: 96px 32px 80px;
+      max-width: 1080px;
+      margin: 0 auto;
+      text-align: center;
+    }
+    h1 {
+      font-family: var(--f-display);
+      font-size: clamp(40px, 6vw, 68px);
+      font-weight: 800;
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+      color: var(--text-strong);
+      margin-bottom: 24px;
+    }
+    h1 em {
+      font-style: italic;
+      color: var(--accent);
+    }
+    .hero-sub {
+      font-size: 17px;
+      color: var(--text-dim);
+      max-width: 520px;
+      margin: 0 auto 48px;
+      line-height: 1.7;
+    }
+    .btn-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 64px;
+    }
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 13px 24px;
+      background: var(--accent);
+      color: #0c0c0b;
+      font-family: var(--f-body);
+      font-size: 14px;
+      font-weight: 500;
+      border-radius: 8px;
+      transition: opacity .18s, box-shadow .18s;
+    }
+    .btn-primary:hover { opacity: .88; box-shadow: 0 0 24px rgba(142,242,96,0.3); }
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 13px 24px;
+      background: var(--bg-raised);
+      border: 1px solid var(--border-hi);
+      color: var(--text);
+      font-family: var(--f-body);
+      font-size: 14px;
+      font-weight: 500;
+      border-radius: 8px;
+      transition: border-color .18s, color .18s, background .18s;
+    }
+    .btn-secondary:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+    /* ČISTÝ OBRÁZEK – bez jakéhokoliv rámečku, borderu, stínu, zaoblení */
+    .clean-image {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      margin-top: 32px;
+      /* žádné další styly – bez border-radius, bez box-shadow, bez border */
+    }
+
+    /* Features & ostatní sekce beze změny */
+    .section-label {
+      font-family: var(--f-body);
+      font-size: 11px;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 12px;
+    }
+    .section-title {
+      font-family: var(--f-display);
+      font-size: clamp(26px, 3.5vw, 38px);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--text-strong);
+      line-height: 1.1;
+      margin-bottom: 14px;
+    }
+    .section-title em { color: var(--accent); font-style: italic; }
+    .section-sub {
+      font-size: 16px;
+      color: var(--text-dim);
+      max-width: 500px;
+      line-height: 1.65;
+    }
+    .divider { border: none; height: 1px; background: var(--border); margin: 0; }
+    .features-section { padding: 96px 0; }
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin-top: 56px;
+    }
+    .feature-cell {
+      background: var(--bg-card);
+      padding: 32px 28px;
+      transition: background .2s;
+    }
+    .feature-cell:hover { background: var(--bg-raised); }
+    .feature-icon {
+      width: 36px; height: 36px;
+      background: var(--accent-dim);
+      border: 1px solid rgba(142,242,96,0.2);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 18px;
+    }
+    .feature-icon svg { width: 16px; height: 16px; stroke: var(--accent); fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+    .feature-name {
+      font-family: var(--f-body);
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-strong);
+      letter-spacing: -0.01em;
+      margin-bottom: 8px;
+    }
+    .feature-desc { font-size: 13px; color: var(--text-dim); line-height: 1.6; font-family: var(--f-body); }
+    .community-section { padding: 96px 0; border-top: 1px solid var(--border); }
+    .community-inner { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; }
+    .community-cards { display: flex; flex-direction: column; gap: 12px; }
+    .community-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px 24px;
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      transition: border-color .2s;
+    }
+    .community-card:hover { border-color: var(--border-hi); }
+    .cc-icon {
+      width: 32px; height: 32px; flex-shrink: 0;
+      background: var(--accent-dim);
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .cc-icon svg { width: 14px; height: 14px; stroke: var(--accent); fill: none; stroke-width: 1.6; }
+    .cc-title { font-size: 13px; font-weight: 500; color: var(--text-strong); margin-bottom: 3px; font-family: var(--f-body); }
+    .cc-desc  { font-size: 12px; color: var(--text-dim); line-height: 1.55; font-family: var(--f-body); }
+    .community-links { display: flex; flex-direction: column; gap: 10px; margin-top: 24px; }
+    .repo-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 18px;
+      background: var(--bg-raised);
+      border: 1px solid var(--border-hi);
+      border-radius: 8px;
+      font-size: 13px;
+      color: var(--text);
+      transition: border-color .18s, color .18s, background .18s;
+    }
+    .repo-link:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+    .repo-link svg  { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.5; flex-shrink: 0; }
+    .repo-link-label { flex: 1; font-family: var(--f-body); }
+    .repo-link-sub { font-family: var(--f-mono); font-size: 10px; opacity: .5; }
+    .editor-section { padding: 96px 0; border-top: 1px solid var(--border); }
+    .editor-inner { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; }
+    .editor-preview {
+      background: var(--bg-card);
+      border: 1px solid var(--border-hi);
+      border-radius: 10px;
+      overflow: hidden;
+      font-family: var(--f-mono);
+      font-size: 12px;
+    }
+    .editor-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      background: #111110;
+      border-bottom: 1px solid var(--border);
+    }
+    .editor-bar-dots { display: flex; gap: 5px; }
+    .editor-bar-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .editor-bar-title {
+      flex: 1;
+      text-align: center;
+      font-size: 10px;
+      color: var(--text-dim);
+      letter-spacing: .03em;
+      font-family: var(--f-mono);
+    }
+    .editor-save {
+      font-size: 10px;
+      padding: 3px 10px;
+      background: var(--accent);
+      color: #0c0c0b;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+    .code-body { padding: 20px 22px; font-family: var(--f-mono); }
+    .code-comment { color: #6b8c42; }
+    .code-keyword { color: #7ec8e3; }
+    .code-string  { color: #8EF260; }
+    .code-fn      { color: #d4a0ff; }
+    .code-text    { color: #8a8a82; }
+    .code-line    { display: block; line-height: 1.8; }
+    .code-indent  { display: inline-block; width: 20px; }
+    .watch-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--accent-dim);
+      border: 1px solid rgba(142,242,96,0.25);
+      border-radius: 20px;
+      padding: 4px 11px;
+      font-family: var(--f-body);
+      font-size: 11px;
+      color: var(--accent);
+      margin-top: 20px;
+    }
+    .watch-badge::before {
+      content: '';
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: blink 1.6s ease-in-out infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+    .editor-list { list-style: none; display: flex; flex-direction: column; gap: 14px; margin-top: 32px; }
+    .editor-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      font-size: 14px;
+      color: var(--text);
+      font-family: var(--f-body);
+    }
+    .editor-list li::before {
+      content: '';
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+      margin-top: 8px;
+    }
+    .inline-code-bg {
+      font-family: var(--f-body);
+      font-size: 11px;
+      color: var(--accent);
+      background: var(--accent-dim);
+      padding: 1px 5px;
+      border-radius: 3px;
+      display: inline-block;
+    }
+    .install-section { padding: 96px 0; border-top: 1px solid var(--border); }
+    .install-inner { text-align: center; }
+    .install-steps {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      margin: 56px 0 48px;
+      text-align: left;
+    }
+    .install-step {
+      background: var(--bg-card);
+      padding: 28px 24px;
+    }
+    .step-num {
+      font-family: var(--f-mono);
+      font-size: 11px;
+      color: var(--accent);
+      letter-spacing: .08em;
+      margin-bottom: 10px;
+    }
+    .step-title { font-size: 13px; font-weight: 500; color: var(--text-strong); margin-bottom: 6px; font-family: var(--f-body); }
+    .step-desc  { font-size: 12px; color: var(--text-dim); line-height: 1.55; font-family: var(--f-body); }
+    .step-tag {
+      display: inline-block;
+      margin-top: 8px;
+      font-family: var(--f-body);
+      font-size: 10px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border-hi);
+      border-radius: 4px;
+      padding: 2px 7px;
+      color: var(--text-dim);
+    }
+    footer {
+      position: relative;
+      z-index: 1;
+      border-top: 1px solid var(--border);
+      padding: 40px 32px;
+    }
+    .footer-inner {
+      max-width: 1080px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .footer-logo {
+      font-family: var(--f-body);
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-dim);
+    }
+    .footer-links { display: flex; gap: 24px; }
+    .footer-links a {
+      font-size: 13px;
+      color: var(--text-dim);
+      transition: color .18s;
+      font-family: var(--f-body);
+    }
+    .footer-links a:hover { color: var(--accent); }
+    .footer-copy { font-size: 12px; color: var(--text-dim); opacity: .5; font-family: var(--f-body); }
+    @media (max-width: 768px) {
+      nav { padding: 20px; }
+      header { padding: 64px 20px 56px; }
+      .container { padding: 0 20px; }
+      .features-grid { grid-template-columns: 1fr; }
+      .community-inner { grid-template-columns: 1fr; gap: 40px; }
+      .editor-inner { grid-template-columns: 1fr; gap: 40px; }
+      .install-steps { grid-template-columns: 1fr 1fr; }
+      .footer-inner { flex-direction: column; align-items: flex-start; }
+    }
+    @media (max-width: 520px) {
+      .install-steps { grid-template-columns: 1fr; }
+      .btn-row { flex-direction: column; align-items: stretch; }
+      .btn-primary, .btn-secondary { justify-content: center; }
+      .nav-links a:not(.nav-gh) { display: none; }
+    }
+  </style>
 </head>
-<body class="bg-neutral-900 text-neutral-300 antialiased selection:bg-[#a7f175] selection:text-neutral-900">
+<body>
 
-    <nav class="container mx-auto px-6 py-6 flex justify-between items-center">
-        <div class="flex items-center">
-            <img src="logo.svg" alt="Affinity Script Manager Logo" class="h-7 md:h-8 w-auto">
-        </div>
-        <div>
-            <a href="https://github.com/JiriKrblich/Affinity-Script-Manager" target="_blank" class="text-sm font-medium text-neutral-400 hover:text-[#a7f175] transition-colors">View on GitHub</a>
-        </div>
-    </nav>
+<nav>
+  <div class="nav-logo">Script Manager for Affinity</div>
+  <div class="nav-links">
+    <a href="https://github.com/JiriKrblich/Affinity-Community-Scripts">Community Scripts</a>
+    <a href="https://github.com/JiriKrblich/Affinity-Script-Manager/releases/latest">Releases</a>
+    <a href="https://github.com/JiriKrblich/Affinity-Script-Manager" target="_blank" class="nav-gh">
+      <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.087.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.114 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.416 22 12c0-5.523-4.477-10-10-10z"/></svg>
+      GitHub
+    </a>
+  </div>
+</nav>
 
-    <header class="container mx-auto px-6 pt-20 pb-16 text-center">
-        <h1 class="text-5xl md:text-7xl font-extrabold tracking-tight text-white mb-6">
-            Manage Affinity scripts <br class="hidden md:block">
-            <span class="bg-gradient-to-r from-[#a7f175] to-[#f4fce3] gradient-text">like a pro.</span>
-        </h1>
-        <p class="text-lg md:text-xl text-neutral-400 mb-12 max-w-2xl mx-auto leading-relaxed">
-            A native desktop GUI to organize your local scripts, push them instantly to the Affinity MCP server, and discover new tools from the community.
-        </p>
-        
-        <div class="flex flex-col sm:flex-row justify-center items-center gap-4 mb-16">
-            <a href="https://github.com/JiriKrblich/Affinity-script-manager/releases/latest" class="w-full sm:w-auto px-8 py-3.5 bg-[#a7f175] hover:bg-[#95e561] text-neutral-900 font-bold rounded-lg shadow-[0_0_20px_rgba(167,241,117,0.2)] hover:shadow-[0_0_30px_rgba(167,241,117,0.4)] transition-all flex items-center justify-center gap-2">
-                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.416 22 12c0-5.523-4.477-10-10-10z"/></svg>
-                Download for Mac
-            </a>
-            <a href="https://github.com/JiriKrblich/Affinity-script-manager/releases/latest" class="w-full sm:w-auto px-8 py-3.5 bg-neutral-800 border border-neutral-700 hover:border-[#a7f175] hover:text-[#a7f175] text-white font-medium rounded-lg shadow-sm transition-all flex items-center justify-center gap-2">
-                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.951-1.801"/></svg>
-                Download for Windows
-            </a>
-        </div>
+<header>
+  <h1 class="fade-1">The script manager<br><em>Affinity</em> should have shipped with.</h1>
+  <p class="hero-sub fade-2">Organize your local library, push scripts to Affinity in one click, write and edit with a built-in code editor, and browse hundreds of community tools.</p>
+  <div class="btn-row fade-3">
+    <a href="https://github.com/JiriKrblich/Affinity-script-manager/releases/latest" class="btn-primary">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2C7 2 3 6 3 11v2c0 5 4 9 9 9s9-4 9-9v-2c0-5-4-9-9-9z"/><path d="M12 2v7m0 0L9 8m3 1l3-1"/><circle cx="12" cy="15" r="1.5"/></svg>
+      Download for macOS
+    </a>
+    <a href="https://github.com/JiriKrblich/Affinity-script-manager/releases/latest" class="btn-secondary">
+      <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.951-1.801"/></svg>
+      Download for Windows
+    </a>
+  </div>
 
-        <div class="relative max-w-5xl mx-auto rounded-xl shadow-[0_0_50px_rgba(0,0,0,0.6)] border border-neutral-700 overflow-hidden bg-neutral-950 aspect-video flex items-center justify-center">
-            <div class="text-neutral-500 flex flex-col items-center">
-                <img src="screenshot.png">
-            </div>
-        </div>
-    </header>
+  <!-- ČISTÝ OBRÁZEK – žádný rámeček, žádný border, žádný stín, žádné zaoblení -->
+  <img src="app.webp" alt="Script Manager for Affinity screenshot" class="clean-image fade-4">
+</header>
 
-    <section class="bg-neutral-950 py-24 border-t border-neutral-800">
-        <div class="container mx-auto px-6 text-center">
-            <span class="text-[#a7f175] font-semibold tracking-widest uppercase text-xs mb-3 block">New in v1.1.0</span>
-            <h2 class="text-3xl md:text-5xl font-extrabold mb-6 text-white">The Community Marketplace</h2>
-            <p class="text-neutral-400 max-w-2xl mx-auto mb-14 text-lg">
-                Discover tools built by other Affinity users or share your own creations. It's like a built-in App Store for your Affinity scripts.
-            </p>
+<!-- FEATURES -->
+<section class="features-section">
+  <div class="container">
+    <div class="section-label">What's inside</div>
+    <h2 class="section-title">Everything in one <em>place</em>.</h2>
+    <p class="section-sub">A complete interface for your Affinity scripting workflow — no terminal required.</p>
+    <div class="features-grid">
+      <div class="feature-cell"><div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/><path d="M16 3v4M8 3v4M3 11h18"/></svg></div><div class="feature-name">My Scripts</div><div class="feature-desc">Your local library stored safely on disk. See file size, modification time, and version at a glance. Edit, export, or delete from the UI.</div></div>
+      <div class="feature-cell"><div class="feature-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg></div><div class="feature-name">Install to Affinity</div><div class="feature-desc">Click the dot next to any script — or the whole row — to push it to Affinity via the MCP bridge. Green means live.</div></div>
+      <div class="feature-cell"><div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></div><div class="feature-name">Watch Mode</div><div class="feature-desc">Always on. When you save a script that's already installed in Affinity, the app automatically re-pushes it — no manual step.</div></div>
+      <div class="feature-cell"><div class="feature-icon"><svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div><div class="feature-name">Code Editor</div><div class="feature-desc">Full Ace editor with JavaScript syntax highlighting, dark theme, and Cmd/Ctrl+S to save. Write new scripts from a pre-filled template.</div></div>
+      <div class="feature-cell"><div class="feature-icon"><svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></div><div class="feature-name">Community Scripts</div><div class="feature-desc">Browse scripts from any GitHub-hosted registry. Filter, search, and install in one click — or save-only to review before activating.</div></div>
+      <div class="feature-cell"><div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div><div class="feature-name">SDK Documentation</div><div class="feature-desc">Fetch Affinity SDK docs straight from the MCP server and read them in a clean Markdown reader. Search SDK hints without leaving the app.</div></div>
+    </div>
+  </div>
+</section>
+<hr class="divider">
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto text-left">
-                <div class="bg-neutral-900 p-8 rounded-2xl border border-neutral-800 hover:border-[#a7f175]/40 transition-colors">
-                    <h3 class="text-xl font-bold mb-3 flex items-center gap-3 text-white">
-                        <span class="flex items-center justify-center w-8 h-8 rounded bg-[#a7f175]/10 text-[#a7f175]">⬇️</span> 
-                        1-Click Installs
-                    </h3>
-                    <p class="text-neutral-400 text-sm leading-relaxed">Browse the registry, find a script you like, and hit install. The app downloads it and automatically pushes it to your Affinity server instantly.</p>
-                </div>
-                <div class="bg-neutral-900 p-8 rounded-2xl border border-neutral-800 hover:border-[#a7f175]/40 transition-colors">
-                    <h3 class="text-xl font-bold mb-3 flex items-center gap-3 text-white">
-                        <span class="flex items-center justify-center w-8 h-8 rounded bg-[#a7f175]/10 text-[#a7f175]">🤝</span> 
-                        Dead-Simple Sharing
-                    </h3>
-                    <p class="text-neutral-400 text-sm leading-relaxed">Got a script to share? You don't need to know Git. Just paste your code into our submission form directly from the app, and we'll add it to the directory.</p>
-                </div>
-            </div>
-        </div>
-    </section>
+<!-- COMMUNITY -->
+<section class="community-section">
+  <div class="container">
+    <div class="community-inner">
+      <div><div class="section-label">Community</div><h2 class="section-title">Built for <em>sharing</em>, not just using.</h2><p class="section-sub">Add any creator's GitHub repository to your app with a single paste. The default registry is maintained and open for contributions.</p><div class="community-links"><a href="https://github.com/JiriKrblich/Affinity-Community-Scripts" target="_blank" class="repo-link"><svg viewBox="0 0 24 24"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg><div><div class="repo-link-label">Affinity Community Scripts</div><div class="repo-link-sub">github.com/JiriKrblich/Affinity-Community-Scripts</div></div><svg viewBox="0 0 24 24" style="opacity:.4"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></div></div>
+      <div class="community-cards">
+        <div class="community-card"><div class="cc-icon"><svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div><div><div class="cc-title">1-click install</div><div class="cc-desc">Hit Install on any community card — the app downloads the script and pushes it to Affinity simultaneously.</div></div></div>
+        <div class="community-card"><div class="cc-icon"><svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></div><div><div class="cc-title">Fork &amp; Edit</div><div class="cc-desc">Open any community script in the built-in editor. Make it yours and keep it in your local library.</div></div></div>
+        <div class="community-card"><div class="cc-icon"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div><div><div class="cc-title">Host your own registry</div><div class="cc-desc">Create a <span class="inline-code-bg">registry.json</span> in any public GitHub repo and paste the URL into the app. Others can add your repo too.</div></div></div>
+      </div>
+    </div>
+  </div>
+</section>
 
-<!--
-    <section class="bg-neutral-900 py-24 border-t border-neutral-800">
-        <div class="container mx-auto px-6 text-center">
-            <h2 class="text-3xl font-bold text-white mb-4">See it in action</h2>
-            <p class="text-neutral-400 mb-12">Watch how easy it is to manage and install scripts.</p>
-            
-            <div class="relative max-w-4xl mx-auto rounded-xl shadow-[0_0_40px_rgba(0,0,0,0.5)] border border-neutral-700 overflow-hidden bg-black aspect-video flex items-center justify-center">
-                <iframe 
-                    class="absolute inset-0 w-full h-full" 
-                    src="https://www.youtube.com/embed/YOUR_VIDEO_ID?rel=0" 
-                    title="Affinity Script Manager Demo" 
-                    frameborder="0" 
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                    allowfullscreen>
-                </iframe>
-            </div>
-        </div>
-    </section>
-    -->
+<!-- EDITOR -->
+<section class="editor-section">
+  <div class="container">
+    <div class="editor-inner">
+      <div class="editor-preview"><div class="editor-bar"><div class="editor-bar-dots"><div class="editor-bar-dot" style="background:#ff5f57"></div><div class="editor-bar-dot" style="background:#febc2e"></div><div class="editor-bar-dot" style="background:#28c840"></div></div><div class="editor-bar-title">auto-exporter.js — Code Editor</div><div class="editor-save">Save</div></div><div class="code-body"><span class="code-line"><span class="code-comment">/**</span></span><span class="code-line"><span class="code-comment"> * name: Auto Exporter</span></span><span class="code-line"><span class="code-comment"> * description: Exports selected layers as PNG.</span></span><span class="code-line"><span class="code-comment"> * version: 1.2.0</span></span><span class="code-line"><span class="code-comment"> * author: you</span></span><span class="code-line"><span class="code-comment"> */</span></span><span class="code-line">&nbsp;</span><span class="code-line"><span class="code-keyword">async function</span> <span class="code-fn">exportLayers</span>() {</span><span class="code-line"><span class="code-indent"></span><span class="code-keyword">const</span> doc = <span class="code-keyword">await</span> <span class="code-fn">affinity</span>.getDocument();</span><span class="code-line"><span class="code-indent"></span><span class="code-keyword">const</span> layers = doc.selectedLayers;</span><span class="code-line"><span class="code-indent"></span><span class="code-keyword">for</span> (<span class="code-keyword">const</span> layer <span class="code-keyword">of</span> layers) {</span><span class="code-line"><span class="code-indent"></span><span class="code-indent"></span><span class="code-keyword">await</span> layer.<span class="code-fn">exportAs</span>({ format: <span class="code-string">'png'</span>, scale: <span class="code-string">2</span> });</span><span class="code-line"><span class="code-indent"></span>}</span><span class="code-line">}</span></div></div>
+      <div><div class="section-label">Built-in Code Editor</div><h2 class="section-title">Write scripts without leaving the <em>app</em>.</h2><p class="section-sub">Full Ace editor with JavaScript syntax highlighting. Start from a pre-filled metadata template or fork a community script and adapt it.</p><div class="watch-badge">watch mode: on — auto-syncing edits</div><ul class="editor-list"><li>Cmd/Ctrl+S to save — Watch Mode instantly re-pushes to Affinity if the script is already installed</li><li>New scripts start from a metadata header template, so they're immediately compatible with the registry format</li><li>Unsaved changes are protected — the app warns before you navigate away</li><li>Drag and drop <span class="inline-code-bg">.js</span> files onto the sidebar to import them instantly</li></ul></div>
+    </div>
+  </div>
+</section>
 
-    <section class="bg-neutral-950 py-24 border-t border-neutral-800">
-        <div class="container mx-auto px-6">
-            <div class="text-center mb-16">
-                <h2 class="text-3xl font-bold text-white">Everything you need in one place</h2>
-                <p class="text-neutral-400 mt-3 text-lg">No more terminal commands or messy file folders.</p>
-            </div>
+<!-- INSTALL -->
+<section class="install-section">
+  <div class="container"><div class="install-inner"><div class="section-label">Installation · macOS</div><h2 class="section-title">Up and running in <em>minutes</em>.</h2><p class="section-sub" style="margin:0 auto;">The app is unsigned, so macOS needs a one-time permission. Here's how.</p><div class="install-steps"><div class="install-step"><div class="step-num">01</div><div class="step-title">Download the DMG</div><div class="step-desc">Get the latest release from GitHub Releases and open the <span class="step-tag">.dmg</span> file.</div></div><div class="install-step"><div class="step-num">02</div><div class="step-title">Drag to Applications</div><div class="step-desc">Drag Script Manager into your Applications folder, then try to open it.</div></div><div class="install-step"><div class="step-num">03</div><div class="step-title">Allow in Privacy settings</div><div class="step-desc">Go to <span class="step-tag">System Settings → Privacy &amp; Security</span> and click <em>Open Anyway</em>.</div></div><div class="install-step"><div class="step-num">04</div><div class="step-title">Confirm and launch</div><div class="step-desc">Click <em>Open</em> in the confirmation dialog. The app opens normally from this point on.</div></div></div><div class="btn-row" style="margin-bottom:0"><a href="https://github.com/JiriKrblich/Affinity-script-manager/releases/latest" class="btn-primary">Download latest release</a><a href="https://github.com/JiriKrblich/Affinity-Script-Manager" class="btn-secondary">View on GitHub</a></div></div></div>
+</section>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-                <div class="p-8 border border-neutral-800 rounded-2xl bg-neutral-900 hover:border-[#a7f175]/50 transition-colors group">
-                    <div class="w-12 h-12 bg-neutral-800 text-[#a7f175] rounded-lg flex items-center justify-center mb-6 text-xl group-hover:scale-110 transition-transform">📂</div>
-                    <h3 class="text-xl font-bold text-white mb-3">Local Library</h3>
-                    <p class="text-sm text-neutral-400 leading-relaxed">Store and organize your custom scripts safely on your disk. Export, delete, or edit them directly from the UI.</p>
-                </div>
-                <div class="p-8 border border-neutral-800 rounded-2xl bg-neutral-900 hover:border-[#a7f175]/50 transition-colors group">
-                    <div class="w-12 h-12 bg-neutral-800 text-[#a7f175] rounded-lg flex items-center justify-center mb-6 text-xl group-hover:scale-110 transition-transform">⚡</div>
-                    <h3 class="text-xl font-bold text-white mb-3">1-Click MCP Push</h3>
-                    <p class="text-sm text-neutral-400 leading-relaxed">Push your local scripts directly to your active Affinity MCP Server with a single button. No manual copying needed.</p>
-                </div>
-                <div class="p-8 border border-neutral-800 rounded-2xl bg-neutral-900 hover:border-[#a7f175]/50 transition-colors group">
-                    <div class="w-12 h-12 bg-neutral-800 text-[#a7f175] rounded-lg flex items-center justify-center mb-6 text-xl group-hover:scale-110 transition-transform">📖</div>
-                    <h3 class="text-xl font-bold text-white mb-3">Built-in SDK Docs</h3>
-                    <p class="text-sm text-neutral-400 leading-relaxed">Fetch Affinity SDK documentation straight from the server and search through hints without leaving the app.</p>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <footer class="bg-neutral-900 py-12 border-t border-neutral-800">
-        <div class="container mx-auto px-6 flex flex-col md:flex-row justify-center items-center gap-4 text-sm text-neutral-500">
-            <div class="flex gap-6 font-medium">
-                <a href="https://github.com/JiriKrblich/Affinity-Script-Manager" class="hover:text-[#a7f175] transition-colors">App GitHub</a>
-                <a href="https://github.com/JiriKrblich/Affinity-Community-Scripts" class="hover:text-[#a7f175] transition-colors">Community Repo</a>
-                <a href="https://github.com/JiriKrblich/Affinity-Script-Manager/issues" class="hover:text-[#a7f175] transition-colors">Report a Bug</a>
-            </div>
-        </div>
-    </footer>
+<footer>
+  <div class="footer-inner">
+    <div class="footer-logo">Script Manager for Affinity</div>
+    <div class="footer-links"><a href="https://github.com/JiriKrblich/Affinity-Script-Manager">App Repo</a><a href="https://github.com/JiriKrblich/Affinity-Community-Scripts">Community Scripts</a><a href="https://github.com/JiriKrblich/Affinity-Script-Manager/issues">Report a Bug</a></div>
+    <div class="footer-copy">Not affiliated with Affinity or Canva.</div>
+  </div>
+</footer>
 
 </body>
 </html>
