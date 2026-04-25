@@ -1,15 +1,14 @@
 const Ico = window.Icons.createIcon;
 const state = {
   nav: 'local',
-  localView: 'list',
   communityQuery: '',
   communityFilter: 'all',
   communitySort: 'name',
   installedIds: new Set(),
-  sdkModule: null,
   editorFile: null,
   editorDirty: false,
   editorOrigin: 'local', // 'local' | 'develop' — where the editor's Back button should return to
+  editorIsNew: false,    // true = blank buffer, filename typed inline, materialised on first save
 };
 
 // Live Ace editor instance (outside `state` so it's not treated as declarative UI state).
@@ -17,18 +16,18 @@ let activeEditor = null;
 
 const NAV_SECTIONS = [
   { label: 'Library',  items: [
-    { id: 'local',     name: 'Local Scripts',  icon: 'folder' },
-    { id: 'bridge',    name: 'Server Bridge',  icon: 'plug'   },
+    { id: 'local',     name: 'My Scripts',        icon: 'folder' },
+    { id: 'bridge',    name: 'Installed Scripts', icon: 'plug'   },
   ]},
   { label: 'Discover', items: [
-    { id: 'community', name: 'Community',      icon: 'compass' },
+    { id: 'community', name: 'Community',         icon: 'compass' },
   ]},
   { label: 'Development', items: [
-    { id: 'develop',   name: 'Code Editor',    icon: 'code' },
+    { id: 'develop',   name: 'Code Editor',       icon: 'code' },
   ]},
   { label: 'Support',  items: [
-    { id: 'docs',      name: 'Documentation',  icon: 'book' },
-    { id: 'sdk',       name: 'SDK Reference',  icon: 'search' },
+    { id: 'docs',      name: 'Documentation',     icon: 'book' },
+    { id: 'issues',    name: 'Issues',            icon: 'github', external: 'https://github.com/JiriKrblich/Affinity-script-manager/issues' },
   ]},
 ];
 
@@ -55,7 +54,15 @@ function renderNav() {
         const c = document.createElement('span'); c.className = 'count'; c.textContent = it.count;
         btn.appendChild(c);
       }
-      btn.addEventListener('click', () => navigate(it.id));
+      if (it.external) {
+        const ext = Ico('external', { size: 11, sw: 1.4 });
+        ext.classList.add('nav-ext-ico');
+        btn.appendChild(ext);
+      }
+      btn.addEventListener('click', () => {
+        if (it.external) { window.api.openUrl(it.external); return; }
+        navigate(it.id);
+      });
       sec.appendChild(btn);
     }
     nav.appendChild(sec);
@@ -81,7 +88,7 @@ async function renderScreen() {
   }
   main.innerHTML = '';
   main.scrollTop = 0;
-  const dispatch = { local: renderLocal, bridge: renderBridge, community: renderCommunity, develop: renderDevelop, docs: renderDocs, sdk: renderSdk, editor: renderEditor };
+  const dispatch = { local: renderLocal, bridge: renderBridge, community: renderCommunity, develop: renderDevelop, docs: renderDocs, editor: renderEditor };
   const fn = dispatch[state.nav] || renderLocal;
   await fn(main);
 }
@@ -90,86 +97,108 @@ function openEditor(filename, origin = 'local') {
   state.editorFile = filename;
   state.editorDirty = false;
   state.editorOrigin = origin;
+  state.editorIsNew = false;
   navigate('editor');
 }
 
-function stubScreen(root, eyebrow, title) {
-  root.innerHTML = `<div class="screen"><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p class="subhead">Screen not yet ported — see task list.</p></div>`;
+const NEW_SCRIPT_TEMPLATE = `/**
+ * name: Untitled Script
+ * description:
+ * version: 1.0.0
+ * author:
+ */
+
+// write your script here
+`;
+
+function openNewScriptInEditor() {
+  state.editorFile = null;
+  state.editorIsNew = true;
+  state.editorDirty = false;
+  state.editorOrigin = 'develop';
+  navigate('editor');
 }
 
-function wireTitleBar() {
-  document.getElementById('tb-min').onclick   = () => window.api.windowMin();
-  document.getElementById('tb-max').onclick   = () => window.api.windowMax();
-  document.getElementById('tb-close').onclick = () => window.api.windowClose();
-  document.getElementById('brand-icon').appendChild(Ico('code', { size: 16, sw: 1.4 }));
-  document.getElementById('ico-upload').appendChild(Ico('upload', { size: 12, sw: 1.8 }));
-
-  document.querySelectorAll('.tb-menu').forEach(el => {
-    el.style.cursor = 'pointer';
-    el.addEventListener('click', () => {
-      if (!window.api.showMenu) return;
-      const name = el.textContent.trim().toLowerCase();
-      const r = el.getBoundingClientRect();
-      window.api.showMenu(name, r.left, r.bottom);
-    });
-  });
+function wireBrand() {
+  document.getElementById('ico-upload').appendChild(Ico('plus', { size: 12, sw: 1.8 }));
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('brand-version').textContent = 'v' + (window.appVersion || '1.2.0');
-  wireTitleBar();
-  // openUploadModal is defined in a later task; guard it for now.
+  document.getElementById('brand-version').textContent = 'for Affinity';
+  wireBrand();
+  wireDropZone();
+
   const upBtn = document.getElementById('btn-open-upload');
   if (typeof openUploadModal === 'function') upBtn.onclick = openUploadModal;
+
+  // GitHub icon button in brand lockup
+  const ghBtn = document.getElementById('btn-brand-gh');
+  if (ghBtn) {
+    ghBtn.appendChild(Ico('github', { size: 14 }));
+    ghBtn.onclick = () => window.api.openUrl('https://github.com/JiriKrblich/Affinity-script-manager');
+  }
 
   if (window.api.onLocalScriptsChanged) {
     window.api.onLocalScriptsChanged(() => {
       if (state.nav === 'local') renderScreen();
-      // Always refresh the nav count — cheap and keeps it honest even off-screen.
       window.api.listLocalScripts().then(res => {
         if (res && res.success) updateNavCount('local', res.data.length);
       }).catch(() => {});
     });
   }
 
-  if (window.api.onMenuAction) {
-    window.api.onMenuAction((action) => {
-      switch (action) {
-        case 'new-script':
-          if (typeof openUploadModal === 'function') openUploadModal();
-          break;
-        case 'refresh-bridge':    state.nav = 'bridge';    renderNav(); renderScreen(); break;
-        case 'refresh-community': state.nav = 'community'; renderNav(); renderScreen(); break;
-        case 'nav-docs':          state.nav = 'docs';      renderNav(); renderScreen(); break;
-        case 'nav-sdk':           state.nav = 'sdk';       renderNav(); renderScreen(); break;
-        case 'open-settings':     window.api.openSettings(); break;
-        case 'check-updates':     if (window.api.checkUpdates) window.api.checkUpdates(); break;
-      }
-    });
-  }
-
   renderNav();
   renderScreen();
 
-  // Sidebar footer meta
-  document.getElementById('sb-meta-path').textContent = '~/MyScripts';
-  document.getElementById('sb-meta-free').textContent = 'local store';
-
-  // Update-available banner (replaces sb-meta-free with a button when an update is found)
+  // Update-available: show the dedicated update button under the version line.
+  const showUpdateButton = (version, onClick) => {
+    const btn = document.getElementById('btn-brand-update');
+    if (!btn) return;
+    btn.textContent = `\u2191 Update to v${version}`;
+    btn.hidden = false;
+    btn.onclick = onClick;
+  };
   if (window.api.onUpdateAvailable) {
     window.api.onUpdateAvailable((url, version) => {
-      const slot = document.getElementById('sb-meta-free');
-      slot.innerHTML = '';
-      const btn = document.createElement('button');
-      btn.className = 'gh-btn compact';
-      btn.style.width = '100%';
-      btn.style.color = 'var(--accent)';
-      btn.textContent = `Update to v${version}`;
-      btn.onclick = () => window.api.openUrl(url);
-      slot.appendChild(btn);
+      showUpdateButton(version, () => window.api.openUrl(url));
     });
   }
 });
+
+function wireDropZone() {
+  const zone = document.getElementById('sb-drop');
+  if (!zone) return;
+  const ico = document.getElementById('drop-ico');
+  if (ico) ico.appendChild(Ico('upload', { size: 18, sw: 1.4 }));
+
+  ['dragenter', 'dragover'].forEach(ev => zone.addEventListener(ev, (e) => {
+    e.preventDefault(); e.stopPropagation();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+    zone.classList.add('dragover');
+  }));
+  ['dragleave', 'dragend'].forEach(ev => zone.addEventListener(ev, (e) => {
+    e.preventDefault(); e.stopPropagation();
+    zone.classList.remove('dragover');
+  }));
+  zone.addEventListener('drop', async (e) => {
+    e.preventDefault(); e.stopPropagation();
+    zone.classList.remove('dragover');
+    const files = Array.from(e.dataTransfer.files || []).filter(f => f.name.toLowerCase().endsWith('.js'));
+    if (files.length === 0) { alert('Only .js files are accepted.'); return; }
+    let savedCount = 0;
+    for (const f of files) {
+      try {
+        const code = await f.text();
+        const safeName = f.name.toLowerCase().replace(/[^a-z0-9_.-]/g, '-');
+        const r = await window.api.saveLocalScript(safeName, code);
+        if (r && r.success) savedCount++;
+      } catch {}
+    }
+    if (savedCount && state.nav === 'local') renderScreen();
+  });
+  // Prevent the browser from navigating away if the user misses the zone
+  ['dragover', 'drop'].forEach(ev => document.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); }));
+}
 
 // ---------- helpers ----------
 function fmtBytes(n) {
@@ -188,37 +217,95 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]);
 }
 
-// ---------- Local Scripts screen ----------
+// Compare dotted versions, returns -1 / 0 / +1. Missing parts treated as 0.
+function cmpVer(a, b) {
+  const pa = String(a || '0').split('.').map(n => parseInt(n, 10) || 0);
+  const pb = String(b || '0').split('.').map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] || 0, y = pb[i] || 0;
+    if (x < y) return -1;
+    if (x > y) return 1;
+  }
+  return 0;
+}
+
+// ---------- My Scripts screen ----------
 async function renderLocal(root) {
   const screen = document.createElement('div'); screen.className = 'screen';
   screen.innerHTML = `
     <div class="eyebrow">Library</div>
-    <h1>Local Scripts</h1>
+    <h1>My Scripts</h1>
     <p class="subhead" id="local-subhead">Loading…</p>
     <div class="status-bar" id="local-status"></div>
     <div class="table" id="local-table"></div>
   `;
   root.appendChild(screen);
 
-  const res = await window.api.listLocalScripts();
-  if (!res.success) {
-    screen.querySelector('#local-table').textContent = 'Error: ' + res.error;
+  // Fetch local + bridge + community in parallel — bridge drives Active/Paused state,
+  // community drives Update-available indication.
+  const [localRes, bridgeRes, commRes] = await Promise.all([
+    window.api.listLocalScripts(),
+    window.api.listMcpScripts().catch(() => ({ success: false })),
+    window.api.listCommunityScripts().catch(() => ({ success: false })),
+  ]);
+  if (!localRes.success) {
+    screen.querySelector('#local-table').textContent = 'Error: ' + localRes.error;
     return;
   }
-  const items = res.data;
+  const items = localRes.data;
   const totalBytes = items.reduce((a, b) => a + b.size, 0);
   updateNavCount('local', items.length);
+
+  // Normalise bridge titles for cross-referencing (stem-based, lowercase).
+  // Bridge is "online" whenever the RPC succeeded, even if the library is empty
+  // (list_library_scripts returns an empty object rather than an empty string when
+  // no scripts are in Affinity, so we can't gate on data type).
+  const bridgeTitles = new Set();
+  const bridgeOnline = !!(bridgeRes && bridgeRes.success);
+  if (bridgeOnline && typeof bridgeRes.data === 'string') {
+    bridgeRes.data.split(/[\n,]+/).map(s => s.trim()).filter(Boolean).forEach(t => {
+      bridgeTitles.add(t.toLowerCase());
+      bridgeTitles.add(t.toLowerCase().replace(/[^a-z0-9_-]/g, '-'));
+    });
+  }
+  const isActive = (it) => {
+    const stem = it.file.replace(/\.js$/i, '').toLowerCase();
+    const name = (it.name || '').toLowerCase();
+    return bridgeTitles.has(stem) || bridgeTitles.has(name);
+  };
+  const activeCount = bridgeOnline ? items.filter(isActive).length : 0;
+
+  // Community lookup — stem-key → {version, download_url, name}.
+  const communityMap = new Map();
+  if (commRes && commRes.success && Array.isArray(commRes.data)) {
+    for (const s of commRes.data) {
+      if (!s || !s.name) continue;
+      const key = s.name.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+      communityMap.set(key, s);
+    }
+  }
+  const updateFor = (it) => {
+    const stem = it.file.replace(/\.js$/i, '').toLowerCase();
+    const community = communityMap.get(stem);
+    if (!community) return null;
+    if (!community.version || !it.version) return null;
+    return cmpVer(it.version, community.version) < 0 ? community : null;
+  };
+
   screen.querySelector('#local-subhead').innerHTML =
-    `${items.length} scripts on disk · ${fmtBytes(totalBytes)} total`;
+    `${items.length} scripts · ${fmtBytes(totalBytes)} total`;
   screen.querySelector('#local-status').innerHTML = `
-    <div class="left"><span class="status-dot on"></span><span>ready</span></div>
-    <div>watch mode: on</div>
+    <div class="left">
+      <span class="status-dot ${bridgeOnline ? 'on' : ''}"></span>
+      <span>${bridgeOnline ? `Connected to Affinity · ${activeCount} active` : 'Affinity not connected'}</span>
+    </div>
+    <div style="color:var(--text-faint); font-size:12px;">watch mode: on</div>
   `;
 
   const table = screen.querySelector('#local-table');
   const hdr = document.createElement('div');
   hdr.className = 'table-row header';
-  hdr.innerHTML = `<div></div><div class="col">Name</div><div class="col">Description</div><div class="col">Modified</div><div class="col">Size</div><div class="col">Actions</div>`;
+  hdr.innerHTML = `<div class="col">Status</div><div class="col">Name</div><div class="col">Modified</div><div class="col">Size</div><div class="col">Actions</div>`;
   table.appendChild(hdr);
 
   if (items.length === 0) {
@@ -226,7 +313,7 @@ async function renderLocal(root) {
     empty.className = 'table-row';
     empty.style.padding = '48px 20px';
     empty.style.color = 'var(--text-faint)';
-    empty.textContent = 'No local scripts yet. Click Upload Script to add one.';
+    empty.textContent = 'No scripts yet. Click Add Script to add one.';
     table.appendChild(empty);
     return;
   }
@@ -235,15 +322,54 @@ async function renderLocal(root) {
     const row = document.createElement('div');
     row.className = 'table-row';
 
-    const iconCell = document.createElement('div');
-    iconCell.appendChild(Ico('file', { size: 14 }));
+    const active = bridgeOnline && isActive(it);
+
+    // Install dot — grey when paused (row-hover previews green), green when active.
+    // Uninstall isn't exposed by Affinity's MCP, so active dots are non-interactive.
+    const dotCell = document.createElement('div');
+    const dot = document.createElement('button');
+    dot.className = 'install-dot' + (active ? ' on' : '');
+    dot.title = active ? 'Installed in Affinity' : (bridgeOnline ? 'Install to Affinity' : 'Affinity is not connected');
+    if (!bridgeOnline) dot.disabled = true;
+    dot.onclick = async (e) => {
+      e.stopPropagation();
+      if (active || !bridgeOnline) return;
+      dot.disabled = true;
+      const r = await window.api.pushToMcp(it.file);
+      if (r && r.success) { renderScreen(); return; }
+      alert('Install failed: ' + ((r && r.error) || 'unknown error'));
+      dot.disabled = false;
+    };
+    dotCell.appendChild(dot);
 
     const nameCell = document.createElement('div');
-    nameCell.innerHTML =
-      `<div class="row-name">${escapeHtml(it.name)}<span class="row-ext">.js</span></div>` +
-      (it.description ? `<div class="row-desc">${escapeHtml(it.description)}</div>` : '');
+    const nameLine = document.createElement('div'); nameLine.className = 'row-name';
+    nameLine.innerHTML = `${escapeHtml(it.name)}<span class="row-ext">.js</span>`;
+    const update = updateFor(it);
+    if (update) {
+      const upBadge = document.createElement('button');
+      upBadge.className = 'tag tag-warn tag-clickable';
+      upBadge.innerHTML = `\u2191 Update <span style="opacity:.7; margin-left:4px;">${escapeHtml(update.version)}</span>`;
+      upBadge.title = `Update to v${update.version}`;
+      upBadge.onclick = async (e) => {
+        e.stopPropagation();
+        const orig = upBadge.innerHTML;
+        upBadge.innerHTML = '<span class="loading">Updating</span>';
+        upBadge.disabled = true;
+        const r = await window.api.saveCommunityScript(update.download_url, update.name);
+        if (r && r.success) { renderScreen(); return; }
+        alert('Update failed: ' + ((r && r.error) || 'unknown error'));
+        upBadge.innerHTML = orig; upBadge.disabled = false;
+      };
+      nameLine.appendChild(upBadge);
+    }
+    nameCell.appendChild(nameLine);
+    if (it.description) {
+      const desc = document.createElement('div'); desc.className = 'row-desc';
+      desc.textContent = it.description;
+      nameCell.appendChild(desc);
+    }
 
-    const descCell = document.createElement('div');   // spacer; description inlined above
     const modCell  = document.createElement('div'); modCell.className  = 'row-meta'; modCell.textContent  = fmtRel(it.modified);
     const sizeCell = document.createElement('div'); sizeCell.className = 'row-meta'; sizeCell.textContent = fmtBytes(it.size);
 
@@ -260,11 +386,6 @@ async function renderLocal(root) {
       e.stopPropagation();
       openEditor(it.file, 'local');
     }));
-    actions.appendChild(mkBtn('push', 'Push to Bridge', async (e) => {
-      e.stopPropagation();
-      const r = await window.api.pushToMcp(it.file);
-      if (!r.success) alert(r.error);
-    }));
     actions.appendChild(mkBtn('download', 'Export to disk', (e) => {
       e.stopPropagation();
       window.api.exportToDisk(it.file);
@@ -276,18 +397,23 @@ async function renderLocal(root) {
       renderScreen();
     }, true));
 
-    row.append(iconCell, nameCell, descCell, modCell, sizeCell, actions);
+    row.append(dotCell, nameCell, modCell, sizeCell, actions);
+    // Whole row = install target for paused rows. Active rows are non-interactive at row level.
+    if (bridgeOnline && !active) {
+      row.style.cursor = 'pointer';
+      row.onclick = () => dot.click();
+    }
     table.appendChild(row);
   }
 }
 
-// ---------- Server Bridge screen ----------
+// ---------- Installed Scripts screen ----------
 async function renderBridge(root) {
   const screen = document.createElement('div'); screen.className = 'screen';
   screen.innerHTML = `
     <div class="eyebrow">Library</div>
-    <h1>Server Bridge</h1>
-    <p class="subhead">MCP connection to <span style="font-family:var(--f-mono)">localhost:6767</span></p>
+    <h1>Installed Scripts</h1>
+    <p class="subhead">MCP connection to <span style="color:var(--text-strong)">localhost:6767</span></p>
 
     <div class="bridge-table">
       <div class="bridge-row header">
@@ -297,18 +423,20 @@ async function renderBridge(root) {
       </div>
       <div class="bridge-row" id="bridge-primary">
         <div style="color:var(--text-strong)">Affinity MCP</div>
-        <div class="mono" style="color:var(--text); font-family:var(--f-mono);">localhost:6767</div>
-        <div class="mono" style="font-family:var(--f-mono);">1.0.0</div>
-        <div class="mono" id="bridge-latency" style="font-family:var(--f-mono);">—</div>
-        <div><span class="status-dot" id="bridge-dot"></span> <span id="bridge-status" style="text-transform:uppercase; font-family:var(--f-mono); font-size:10px;"><span class="loading">checking</span></span></div>
+        <div style="color:var(--text)">localhost:6767</div>
+        <div style="color:var(--text)">1.0.0</div>
+        <div id="bridge-latency" style="color:var(--text); font-variant-numeric:tabular-nums;">—</div>
+        <div style="display:flex; align-items:center; gap:8px;"><span class="status-dot" id="bridge-dot"></span> <span id="bridge-status" style="font:500 12px/1 var(--f-sans); color:var(--text-strong); text-transform:capitalize;"><span class="loading">checking</span></span></div>
         <div><button class="gh-btn compact" id="btn-bridge-refresh">Refresh</button></div>
       </div>
     </div>
 
-    <div class="eyebrow">Event Stream</div>
-    <div class="event-log" id="bridge-log"></div>
+    <details class="event-stream">
+      <summary class="eyebrow">Event Stream</summary>
+      <div class="event-log" id="bridge-log"></div>
+    </details>
 
-    <h2 class="section-title">Scripts on Bridge</h2>
+    <h2 class="section-title">Scripts in Affinity</h2>
     <div class="card-grid" id="bridge-cards"></div>
   `;
   root.appendChild(screen);
@@ -409,7 +537,7 @@ async function renderCommunity(root) {
   screen.querySelector('#c-search-icon').appendChild(Ico('search', { size: 13 }));
 
   screen.querySelector('#btn-community-source').onclick   = () => window.api.openUrl('https://github.com/JiriKrblich/Affinity-Community-Scripts');
-  screen.querySelector('#btn-community-settings').onclick = () => window.api.openSettings();
+  screen.querySelector('#btn-community-settings').onclick = () => openSettingsModal();
   screen.querySelector('#btn-community-submit').onclick   = () => window.api.openExternalRepo();
 
   const res = await window.api.listCommunityScripts();
@@ -482,10 +610,34 @@ async function renderCommunity(root) {
         <div class="desc">${escapeHtml(s.description || '')}</div>
         <div class="foot">
           <span class="tag">${escapeHtml((s.category || 'other').toLowerCase())}</span>
-          <button class="install-btn${installed ? ' installed' : ''}">${installed ? '\u2713 Installed' : 'Install'}</button>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <button class="icon-btn c-save" title="Save to My Scripts (don't install)"></button>
+            <button class="install-btn${installed ? ' installed' : ''}">${installed ? '\u2713 Installed' : 'Install'}</button>
+          </div>
         </div>
       `);
       card.innerHTML = cardHtml.join('');
+
+      const saveBtn = card.querySelector('.c-save');
+      saveBtn.appendChild(Ico('download', { size: 13, sw: 1.4 }));
+      saveBtn.onclick = async (e) => {
+        e.stopPropagation();
+        const icon = saveBtn.firstElementChild;
+        saveBtn.disabled = true;
+        const r = await window.api.saveCommunityScript(s.download_url, s.name);
+        if (r && r.success) {
+          saveBtn.replaceChildren(Ico('check', { size: 13, sw: 1.6 }));
+          saveBtn.title = 'Saved to My Scripts';
+          setTimeout(() => {
+            saveBtn.replaceChildren(Ico('download', { size: 13, sw: 1.4 }));
+            saveBtn.title = "Save to My Scripts (don't install)";
+            saveBtn.disabled = false;
+          }, 1600);
+        } else {
+          alert((r && r.error) || 'Save failed');
+          saveBtn.disabled = false;
+        }
+      };
 
       const btn = card.querySelector('.install-btn');
       btn.onclick = async () => {
@@ -527,11 +679,75 @@ async function renderDocs(root) {
     <div class="eyebrow">Support</div>
     <h1>Documentation</h1>
     <p class="subhead" id="docs-sub"><span class="loading">Fetching topics</span></p>
+
+    <div class="search-bar" style="margin-bottom: 20px;">
+      <div class="search-wrap">
+        <span id="docs-search-ico"></span>
+        <input id="docs-q" type="text" placeholder="Search the SDK for hints and examples" />
+        <span class="kbd">↵</span>
+      </div>
+    </div>
+
+    <div id="docs-search-result" style="display:none; margin-bottom: 28px;"></div>
     <div id="docs-body"></div>
   `;
   root.appendChild(screen);
-  const body = screen.querySelector('#docs-body');
 
+  screen.querySelector('#docs-search-ico').appendChild(Ico('search', { size: 13 }));
+
+  // --- SDK search wired into the same screen ---
+  const input = screen.querySelector('#docs-q');
+  const out   = screen.querySelector('#docs-search-result');
+
+  const resetOut = () => { out.className = ''; out.removeAttribute('style'); out.innerHTML = ''; out.style.display = 'none'; };
+
+  input.addEventListener('keydown', async (e) => {
+    if (e.key !== 'Enter') return;
+    const q = input.value.trim();
+    if (!q) { resetOut(); return; }
+    out.className = '';
+    out.removeAttribute('style');
+    out.style.display = 'block';
+    out.style.padding = '16px 20px';
+    out.style.border = '1px solid var(--hair)';
+    out.style.background = 'var(--bg-card)';
+    out.style.borderRadius = 'var(--r-lg)';
+    out.style.marginBottom = '28px';
+    out.style.color = 'var(--text-faint)';
+    out.style.fontSize = '12px';
+    out.innerHTML = '<div class="eyebrow accent"><span class="loading">searching</span></div>';
+
+    let r;
+    try {
+      r = await window.api.searchDocs(q);
+    } catch (err) {
+      out.style.cssText = 'display:block; margin-bottom: 28px; color: var(--danger-text); font-size: 12px; padding: 16px 20px; border: 1px solid var(--danger-border); background: var(--danger-bg); border-radius: var(--r-lg);';
+      out.textContent = 'IPC error: ' + (err && err.message ? err.message : String(err));
+      return;
+    }
+    if (!r || !r.success) {
+      out.style.cssText = 'display:block; margin-bottom: 28px; color: var(--danger-text); font-size: 12px; padding: 16px 20px; border: 1px solid var(--danger-border); background: var(--danger-bg); border-radius: var(--r-lg);';
+      out.textContent = (r && r.error) || 'Search failed with no error message. The MCP bridge may be offline.';
+      return;
+    }
+    const text = (r.data || '').trim();
+    if (!text) {
+      out.style.cssText = 'display:block; margin-bottom: 28px; color: var(--text-faint); font-size: 12px; padding: 16px 20px; border: 1px solid var(--hair); background: var(--bg-card); border-radius: var(--r-lg);';
+      out.textContent = `No hints matched "${q}". The SDK hint pool is cross-session and populated by other tools, it may be empty for this query.`;
+      return;
+    }
+    out.className = 'doc-reader';
+    out.style.cssText = 'display:block; margin-bottom: 28px; padding: 20px 24px; border: 1px solid var(--hair); background: var(--bg-card); border-radius: var(--r-lg);';
+    const close = document.createElement('button'); close.className = 'gh-btn compact'; close.textContent = 'Clear search'; close.style.marginBottom = '14px';
+    close.onclick = () => { input.value = ''; resetOut(); };
+    const content = document.createElement('div'); content.innerHTML = window.marked ? window.marked.parse(text) : escapeHtml(text);
+    out.innerHTML = '';
+    out.appendChild(close);
+    out.appendChild(content);
+  });
+
+  // --- Doc cards grid ---
+  const body = screen.querySelector('#docs-body');
   if (!docsCache) {
     const res = await window.api.fetchDocs();
     if (!res.success) { body.textContent = 'Error: ' + res.error; return; }
@@ -573,78 +789,13 @@ function openDocReader(doc) {
   main.appendChild(reader);
 }
 
-// ---------- SDK Reference screen ----------
-async function renderSdk(root) {
-  const screen = document.createElement('div'); screen.className = 'screen';
-  screen.innerHTML = `
-    <div class="eyebrow">Support</div>
-    <h1>SDK Reference</h1>
-    <p class="subhead">Search the SDK for hints and examples.</p>
-    <div class="search-bar" style="margin-bottom: 24px;">
-      <div class="search-wrap">
-        <span id="sdk-search-ico"></span>
-        <input id="sdk-q" type="text" placeholder="How do I handle authentication?" />
-        <span class="kbd">↵</span>
-      </div>
-    </div>
-    <div id="sdk-result" style="min-height:120px; color:var(--text-faint); font-size:12px;">Type a question and press Enter.</div>
-  `;
-  root.appendChild(screen);
-  screen.querySelector('#sdk-search-ico').appendChild(Ico('search', { size: 13 }));
-
-  const input = screen.querySelector('#sdk-q');
-  const out = screen.querySelector('#sdk-result');
-
-  input.addEventListener('keydown', async (e) => {
-    if (e.key !== 'Enter') return;
-    const q = input.value.trim();
-    if (!q) return;
-    out.className = '';
-    out.removeAttribute('style');
-    out.style.minHeight = '120px';
-    out.style.color = 'var(--text-faint)';
-    out.style.fontSize = '12px';
-    out.innerHTML = '<div class="eyebrow accent"><span class="loading">searching</span></div>';
-
-    let r;
-    try {
-      r = await window.api.searchDocs(q);
-    } catch (err) {
-      out.removeAttribute('style');
-      out.style.cssText = 'color: var(--danger-text); font-size: 12px; padding: 16px; border: 1px solid var(--danger-border); background: var(--danger-bg);';
-      out.textContent = 'IPC error: ' + (err && err.message ? err.message : String(err));
-      return;
-    }
-
-    if (!r || !r.success) {
-      out.removeAttribute('style');
-      out.style.cssText = 'color: var(--danger-text); font-size: 12px; padding: 16px; border: 1px solid var(--danger-border); background: var(--danger-bg);';
-      out.textContent = (r && r.error) || 'Search failed with no error message — the MCP bridge may be offline. Check the Server Bridge screen.';
-      return;
-    }
-
-    const text = (r.data || '').trim();
-    if (!text) {
-      out.removeAttribute('style');
-      out.style.cssText = 'color: var(--text-faint); font-size: 12px; padding: 16px; border: 1px solid var(--hair); background: var(--bg-card);';
-      out.textContent = `No hints matched "${q}". The SDK hint pool is cross-session and populated by other tools — it may be empty for this query.`;
-      return;
-    }
-
-    out.className = 'doc-reader';
-    out.removeAttribute('style');
-    out.style.cssText = 'padding: 24px; border: 1px solid var(--hair); background: var(--bg-card);';
-    out.innerHTML = (window.marked ? window.marked.parse(text) : escapeHtml(text));
-  });
-}
-
 // ---------- Upload / Download modals ----------
 function openUploadModal() {
   const bd = document.createElement('div'); bd.className = 'modal-backdrop';
   bd.innerHTML = `
     <div class="modal">
       <div class="modal-head">
-        <h3>Upload Script</h3>
+        <h3>Add Script</h3>
         <button class="icon-btn" id="m-close"></button>
       </div>
       <div class="modal-body">
@@ -718,6 +869,81 @@ function openDownloadModal(title) {
   };
 }
 
+// ---------- Settings modal (internal — replaces the separate window) ----------
+const DEFAULT_COMMUNITY_REPO = 'https://raw.githubusercontent.com/JiriKrblich/Affinity-Community-Scripts/refs/heads/main/registry.json';
+
+function openSettingsModal() {
+  const bd = document.createElement('div'); bd.className = 'modal-backdrop';
+  bd.innerHTML = `
+    <div class="modal" style="max-width:560px">
+      <div class="modal-head">
+        <h3>Community Repositories</h3>
+        <button class="icon-btn" id="m-close"></button>
+      </div>
+      <div class="modal-body" style="gap:18px;">
+        <p>Paste a GitHub URL (<span style="color:var(--text-strong); font-weight:600;">https://github.com/user/repo</span>) to discover more scripts.</p>
+        <div class="add-repo">
+          <input id="m-repo" type="text" placeholder="https://github.com/user/repository">
+          <button class="accent-btn compact" id="m-add">Add</button>
+        </div>
+        <div>
+          <div class="eyebrow" style="margin-bottom:10px;">Active repositories</div>
+          <div id="m-repo-list"></div>
+        </div>
+      </div>
+    </div>`;
+  bd.querySelector('#m-close').appendChild(Ico('close', { size: 13 }));
+  document.body.appendChild(bd);
+
+  const close = () => bd.remove();
+  bd.querySelector('#m-close').onclick = close;
+  bd.addEventListener('click', (e) => { if (e.target === bd) close(); });
+
+  const getDisplayName = (url) => {
+    const m = url.match(/raw\.githubusercontent\.com\/([^\/]+\/[^\/]+)/);
+    return m ? m[1] : url;
+  };
+
+  const list = bd.querySelector('#m-repo-list');
+  const repoInput = bd.querySelector('#m-repo');
+  const addBtn = bd.querySelector('#m-add');
+
+  const load = async () => {
+    const res = await window.api.getRepos();
+    list.innerHTML = '';
+    if (!res.success) return;
+    res.data.forEach(url => {
+      const row = document.createElement('div'); row.className = 'repo-row';
+      const isDefault = url === DEFAULT_COMMUNITY_REPO;
+      const displayName = getDisplayName(url);
+      row.innerHTML = `<div class="name">${escapeHtml(displayName)}</div>` +
+        (isDefault ? `<span class="kind">Default</span>` : `<button class="gh-btn compact danger">Remove</button>`);
+      if (!isDefault) {
+        row.querySelector('button').onclick = async () => {
+          if (!confirm(`Remove ${displayName}?`)) return;
+          await window.api.removeRepo(url);
+          load();
+        };
+      }
+      list.appendChild(row);
+    });
+  };
+
+  const submit = async () => {
+    const url = repoInput.value.trim();
+    if (!url) return;
+    addBtn.innerHTML = '<span class="loading">Adding</span>'; addBtn.disabled = true;
+    const r = await window.api.addRepo(url);
+    addBtn.textContent = 'Add'; addBtn.disabled = false;
+    if (!r.success) { alert(r.error); return; }
+    repoInput.value = ''; load();
+  };
+  addBtn.onclick = submit;
+  repoInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+
+  load();
+}
+
 // ---------- Nav count helper ----------
 function updateNavCount(id, count) {
   const item = document.querySelector(`.nav-item[data-nav="${id}"]`);
@@ -733,16 +959,25 @@ function updateNavCount(id, count) {
 
 // ---------- Editor screen ----------
 async function renderEditor(root) {
-  const filename = state.editorFile;
-  if (!filename) { state.nav = 'local'; return renderScreen(); }
+  const isNew = !!state.editorIsNew;
+  const filename = state.editorFile; // null when isNew === true
+  if (!isNew && !filename) { state.nav = 'local'; return renderScreen(); }
 
   const screen = document.createElement('div'); screen.className = 'editor-screen';
   const origin = state.editorOrigin || 'local';
-  const backLabel = origin === 'develop' ? '← Back to Code Editor' : '← Back to Local Scripts';
+  const backLabel = origin === 'develop' ? '← Back to Code Editor' : '← Back to My Scripts';
+
+  // New scripts get a filename input in the header styled as an editable headline.
+  // Existing scripts show the filename static with a dirty-dot indicator.
+  const filenameHtml = isNew
+    ? `<input id="ed-filename" type="text" placeholder="my-new-script" autocomplete="off" spellcheck="false">
+       <span class="ed-ext">.js</span>`
+    : `<span class="ed-dirty" id="ed-dirty"></span>${escapeHtml(filename)}`;
+
   screen.innerHTML = `
     <div class="editor-header">
       <button class="gh-btn compact" id="ed-back">${backLabel}</button>
-      <div class="editor-filename"><span class="ed-dirty" id="ed-dirty"></span>${escapeHtml(filename)}</div>
+      <div class="editor-filename${isNew ? ' new' : ''}">${filenameHtml}</div>
       <button class="accent-btn compact" id="ed-save" disabled>Save</button>
     </div>
     <div class="editor-host" id="editor-host"></div>
@@ -753,19 +988,26 @@ async function renderEditor(root) {
   const saveBtn  = screen.querySelector('#ed-save');
   const dirtyEl  = screen.querySelector('#ed-dirty');
   const host     = screen.querySelector('#editor-host');
+  const nameInput = screen.querySelector('#ed-filename'); // null when not isNew
   backBtn.onclick = () => navigate(origin);
 
   if (!window.ace) {
     host.innerHTML = `<div style="padding:40px; color:var(--danger-text); font-size:13px;">
-      Ace Editor failed to load (CDN unreachable?). Edit the file externally — watch mode will pick up changes automatically.
+      Ace Editor failed to load (CDN unreachable?). Edit the file externally, watch mode will pick up changes automatically.
     </div>`;
     return;
   }
 
-  const res = await window.api.readLocalScript(filename);
-  if (!res || !res.success) {
-    host.innerHTML = `<div style="padding:40px; color:var(--danger-text); font-size:13px;">Error: ${escapeHtml((res && res.error) || 'Could not read file')}</div>`;
-    return;
+  let initialContent;
+  if (isNew) {
+    initialContent = NEW_SCRIPT_TEMPLATE;
+  } else {
+    const res = await window.api.readLocalScript(filename);
+    if (!res || !res.success) {
+      host.innerHTML = `<div style="padding:40px; color:var(--danger-text); font-size:13px;">Error: ${escapeHtml((res && res.error) || 'Could not read file')}</div>`;
+      return;
+    }
+    initialContent = res.data.code || '';
   }
 
   activeEditor = ace.edit(host, {
@@ -775,17 +1017,19 @@ async function renderEditor(root) {
     useSoftTabs: true,
     fontSize: '13px',
     showPrintMargin: false,
-    fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
+    fontFamily: 'SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
   });
-  activeEditor.setValue(res.data.code || '', -1); // -1 puts the cursor at the start instead of selecting all
-  activeEditor.focus();
+  activeEditor.setValue(initialContent, -1);
+  if (isNew && nameInput) { nameInput.focus(); }
+  else { activeEditor.focus(); }
 
   const markDirty = (b) => {
     state.editorDirty = b;
-    dirtyEl.textContent = b ? '● ' : '';
+    if (dirtyEl) dirtyEl.textContent = b ? '● ' : '';
     saveBtn.disabled = !b;
   };
-  markDirty(false);
+  // New scripts start dirty (unsaved buffer). Existing scripts start clean.
+  markDirty(isNew);
 
   activeEditor.session.on('change', () => {
     if (!state.editorDirty) markDirty(true);
@@ -795,13 +1039,35 @@ async function renderEditor(root) {
     if (!activeEditor) return;
     const code = activeEditor.getValue();
     const originalLabel = saveBtn.textContent;
+
+    let targetFilename;
+    if (state.editorIsNew) {
+      const raw = (nameInput && nameInput.value || '').trim();
+      if (!raw) { alert('Please enter a script name before saving.'); nameInput && nameInput.focus(); return; }
+      const base = raw.replace(/\.js$/i, '').toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/^-+|-+$/g, '');
+      if (!base) { alert('Please enter a valid name (letters, numbers, dashes).'); nameInput && nameInput.focus(); return; }
+      targetFilename = base + '.js';
+    } else {
+      targetFilename = filename;
+    }
+
     saveBtn.innerHTML = '<span class="loading">Saving</span>'; saveBtn.disabled = true;
-    const r = await window.api.saveLocalScript(filename, code);
+    const r = await window.api.saveLocalScript(targetFilename, code);
     if (!r || !r.success) {
       alert('Save failed: ' + ((r && r.error) || 'unknown error'));
       saveBtn.textContent = originalLabel; saveBtn.disabled = false;
       return;
     }
+
+    // If this was a new script, materialise it: swap input for static filename display
+    // and update state so subsequent saves overwrite instead of prompting again.
+    if (state.editorIsNew) {
+      state.editorIsNew = false;
+      state.editorFile = targetFilename;
+      const fnameEl = screen.querySelector('.editor-filename');
+      fnameEl.innerHTML = `<span class="ed-dirty" id="ed-dirty"></span>${escapeHtml(targetFilename)}`;
+    }
+
     markDirty(false);
     saveBtn.textContent = originalLabel;
   };
@@ -822,152 +1088,99 @@ async function renderDevelop(root) {
     <div class="screen-header">
       <div>
         <h1 style="margin-bottom:6px">Code Editor</h1>
-        <p class="subhead" style="margin:0">Create a new script from scratch, or pick an existing one to edit. Changes save to disk and auto-push to the bridge via watch mode.</p>
+        <p class="subhead" style="margin:0">Write new scripts or edit existing ones. Changes auto-sync to Affinity.</p>
       </div>
       <div class="actions">
         <button class="accent-btn compact" id="btn-new-script"><span id="ico-new-plus"></span> New Script</button>
       </div>
     </div>
 
-    <div class="eyebrow" style="margin-bottom:12px">Local Scripts</div>
-    <div class="card-grid" id="dev-local"></div>
+    <div class="eyebrow" style="margin-bottom:12px">My Scripts</div>
+    <div class="dev-list" id="dev-local"></div>
 
     <div class="eyebrow" style="margin:28px 0 12px">Community — Fork &amp; Edit</div>
-    <div class="card-grid" id="dev-community"></div>
+    <div class="dev-list" id="dev-community"></div>
   `;
   root.appendChild(screen);
   screen.querySelector('#ico-new-plus').appendChild(Ico('plus', { size: 12, sw: 1.8 }));
-  screen.querySelector('#btn-new-script').onclick = openNewScriptModal;
+  screen.querySelector('#btn-new-script').onclick = openNewScriptInEditor;
 
-  // Local scripts section
-  const localGrid = screen.querySelector('#dev-local');
+  // Local scripts section — table list
+  const localList = screen.querySelector('#dev-local');
   const localRes = await window.api.listLocalScripts();
   if (!localRes.success) {
-    localGrid.innerHTML = `<div style="color:var(--danger-text); font-size:12px;">Error: ${escapeHtml(localRes.error)}</div>`;
+    localList.innerHTML = `<div class="dev-empty">Error: ${escapeHtml(localRes.error)}</div>`;
   } else if (localRes.data.length === 0) {
-    localGrid.innerHTML = `<div style="color:var(--text-faint); font-size:12px; grid-column:1/-1;">No local scripts yet. Click "New Script" to create one.</div>`;
+    localList.innerHTML = `<div class="dev-empty">No local scripts yet. Click "New Script" to start one.</div>`;
   } else {
     for (const it of localRes.data) {
-      const c = document.createElement('div'); c.className = 'card';
-      const title = document.createElement('div'); title.className = 'card-title';
-      title.appendChild(Ico('file', { size: 14 }));
-      const span = document.createElement('span'); span.textContent = it.name; title.appendChild(span);
-      c.appendChild(title);
-      if (it.description) {
-        const desc = document.createElement('div');
-        desc.style.cssText = 'font-size:12px; color:var(--text); margin-bottom:14px; line-height:1.55;';
-        desc.textContent = it.description;
-        c.appendChild(desc);
-      }
-      const spacer = document.createElement('div'); spacer.style.flex = '1'; c.appendChild(spacer);
+      const row = document.createElement('div'); row.className = 'dev-row';
+
+      const iconCell = document.createElement('div'); iconCell.appendChild(Ico('file', { size: 14 }));
+
+      const nameCell = document.createElement('div');
+      nameCell.innerHTML = `<div class="row-name">${escapeHtml(it.name)}<span class="row-ext">.js</span></div>` +
+        (it.description ? `<div class="row-desc">${escapeHtml(it.description)}</div>` : '');
+
+      const metaCell = document.createElement('div'); metaCell.className = 'row-meta';
+      metaCell.textContent = fmtRel(it.modified);
+
+      const btnCell = document.createElement('div'); btnCell.style.textAlign = 'right';
       const btn = document.createElement('button'); btn.className = 'gh-btn compact'; btn.textContent = 'Edit';
-      btn.onclick = () => openEditor(it.file, 'develop');
-      c.appendChild(btn);
-      localGrid.appendChild(c);
+      btn.onclick = (e) => { e.stopPropagation(); openEditor(it.file, 'develop'); };
+      btnCell.appendChild(btn);
+
+      row.append(iconCell, nameCell, metaCell, btnCell);
+      row.onclick = () => openEditor(it.file, 'develop');
+      localList.appendChild(row);
     }
   }
 
-  // Community section
-  const commGrid = screen.querySelector('#dev-community');
-  commGrid.innerHTML = '<div style="color:var(--text-faint); font-size:12px;"><span class="loading">Fetching community registries</span></div>';
+  // Community section — table list
+  const commList = screen.querySelector('#dev-community');
+  commList.innerHTML = '<div class="dev-empty"><span class="loading">Fetching community registries</span></div>';
   const commRes = await window.api.listCommunityScripts();
-  commGrid.innerHTML = '';
+  commList.innerHTML = '';
   if (!commRes || !commRes.success) {
-    commGrid.innerHTML = `<div style="color:var(--danger-text); font-size:12px;">Error: ${escapeHtml((commRes && commRes.error) || 'failed')}</div>`;
+    commList.innerHTML = `<div class="dev-empty">Error: ${escapeHtml((commRes && commRes.error) || 'failed')}</div>`;
     return;
   }
   const scripts = commRes.data || [];
   if (scripts.length === 0) {
-    commGrid.innerHTML = `<div style="color:var(--text-faint); font-size:12px; grid-column:1/-1;">No community scripts.</div>`;
+    commList.innerHTML = `<div class="dev-empty">No community scripts.</div>`;
     return;
   }
   for (const s of scripts) {
-    const c = document.createElement('div'); c.className = 'card';
-    const title = document.createElement('div'); title.className = 'card-title';
-    title.appendChild(Ico('file', { size: 14 }));
-    const span = document.createElement('span'); span.textContent = s.name || '(untitled)'; title.appendChild(span);
-    c.appendChild(title);
-    const author = document.createElement('div');
-    author.style.cssText = 'font: 400 11px/1 var(--f-mono); color: var(--text-dim); margin-bottom: 10px;';
-    author.textContent = 'by ' + (s.author || 'community');
-    c.appendChild(author);
-    if (s.description) {
-      const desc = document.createElement('div');
-      desc.style.cssText = 'font-size:12px; color:var(--text); margin-bottom:14px; line-height:1.55;';
-      desc.textContent = s.description;
-      c.appendChild(desc);
-    }
-    const spacer = document.createElement('div'); spacer.style.flex = '1'; c.appendChild(spacer);
+    const row = document.createElement('div'); row.className = 'dev-row community';
+
+    const iconCell = document.createElement('div'); iconCell.appendChild(Ico('file', { size: 14 }));
+
+    const nameCell = document.createElement('div');
+    const name = s.name || '(untitled)';
+    const author = s.author || 'community';
+    nameCell.innerHTML = `<div class="row-name">${escapeHtml(name)}</div>` +
+      `<div class="row-desc">by ${escapeHtml(author)}${s.description ? ' · ' + escapeHtml(s.description) : ''}</div>`;
+
+    const btnCell = document.createElement('div'); btnCell.style.textAlign = 'right';
     const btn = document.createElement('button'); btn.className = 'gh-btn compact'; btn.textContent = 'Fork & Edit';
-    btn.onclick = async () => {
-      const original = btn.textContent;
-      btn.innerHTML = '<span class="loading">Forking</span>'; btn.disabled = true;
-      const r = await window.api.downloadCommunityScript(s.download_url, s.name);
+
+    const forkAndEdit = async (trigger) => {
+      const original = trigger.textContent;
+      trigger.innerHTML = '<span class="loading">Forking</span>'; trigger.disabled = true;
+      const r = await window.api.saveCommunityScript(s.download_url, s.name);
       if (!r || !r.success) {
         alert((r && r.error) || 'Fork failed');
-        btn.textContent = original; btn.disabled = false;
+        trigger.textContent = original; trigger.disabled = false;
         return;
       }
-      // Same filename-sanitisation rule as main.js uses for download-community-script.
       const safe = (s.name || 'script').toLowerCase().replace(/[^a-z0-9_-]/g, '-') + '.js';
       openEditor(safe, 'develop');
     };
-    c.appendChild(btn);
-    commGrid.appendChild(c);
+    btn.onclick = (e) => { e.stopPropagation(); forkAndEdit(btn); };
+    btnCell.appendChild(btn);
+
+    row.append(iconCell, nameCell, btnCell);
+    row.onclick = () => forkAndEdit(btn);
+    commList.appendChild(row);
   }
-}
-
-// "New Script" modal — asks for a filename, seeds a header template, opens editor.
-function openNewScriptModal() {
-  const bd = document.createElement('div'); bd.className = 'modal-backdrop';
-  bd.innerHTML = `
-    <div class="modal" style="max-width:460px">
-      <div class="modal-head"><h3>New Script</h3></div>
-      <div class="modal-body">
-        <p>Creates a <span style="font-family:var(--f-mono); color:var(--text-strong);">.js</span> file in your local library with a metadata header, then opens it in the editor.</p>
-        <div><label>Script name</label><input id="ns-name" type="text" placeholder="my-new-script" autofocus></div>
-      </div>
-      <div class="modal-foot">
-        <button class="gh-btn" id="ns-cancel">Cancel</button>
-        <button class="accent-btn" id="ns-create">Create &amp; Open</button>
-      </div>
-    </div>`;
-  document.body.appendChild(bd);
-  const close = () => bd.remove();
-  bd.querySelector('#ns-cancel').onclick = close;
-  bd.addEventListener('click', (e) => { if (e.target === bd) close(); });
-  const nameInput = bd.querySelector('#ns-name');
-  setTimeout(() => nameInput.focus(), 0);
-
-  const submit = async () => {
-    const raw = nameInput.value.trim();
-    if (!raw) { nameInput.focus(); return; }
-    // Strip trailing .js if user typed it, sanitise, re-append .js.
-    const base = raw.replace(/\.js$/i, '').toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/^-+|-+$/g, '');
-    if (!base) { alert('Please enter a valid script name (letters, numbers, dashes).'); return; }
-    const filename = base + '.js';
-    const prettyName = raw.replace(/\.js$/i, '');
-    const template = `/**
- * name: ${prettyName}
- * description:
- * version: 1.0.0
- * author:
- */
-
-// write your script here
-`;
-    const createBtn = bd.querySelector('#ns-create');
-    createBtn.innerHTML = '<span class="loading">Creating</span>'; createBtn.disabled = true;
-    const r = await window.api.saveLocalScript(filename, template);
-    if (!r || !r.success) {
-      alert('Could not create file: ' + ((r && r.error) || 'unknown'));
-      createBtn.textContent = 'Create & Open'; createBtn.disabled = false;
-      return;
-    }
-    close();
-    openEditor(filename, 'develop');
-  };
-
-  bd.querySelector('#ns-create').onclick = submit;
-  nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
 }

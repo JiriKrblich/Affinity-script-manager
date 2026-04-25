@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('api', {
   // --- Komunitní Marketplace ---
   listCommunityScripts: () => ipcRenderer.invoke('list-community-scripts'),
   downloadCommunityScript: (url, filename) => ipcRenderer.invoke('download-community-script', url, filename),
+  saveCommunityScript:     (url, filename) => ipcRenderer.invoke('save-community-script',     url, filename),
   openExternalRepo: () => ipcRenderer.send('open-external-repo'),
 
   // --- Dokumentace a Hledání ---
@@ -25,7 +26,6 @@ contextBridge.exposeInMainWorld('api', {
   searchDocs: (query) => ipcRenderer.invoke('search-docs', query),
 
   // --- Nastavení a repozitáře ---
-  openSettings: () => ipcRenderer.send('open-settings'), // NOVÉ
   getRepos: () => ipcRenderer.invoke('get-repos'),
   addRepo: (url) => ipcRenderer.invoke('add-repo', url),
   removeRepo: (url) => ipcRenderer.invoke('remove-repo', url),
@@ -34,14 +34,6 @@ contextBridge.exposeInMainWorld('api', {
   // --- Systémové (Aktualizace) ---
   checkUpdates: () => ipcRenderer.invoke('check-updates'),
   onUpdateAvailable: (callback) => ipcRenderer.on('update-available', (event, url, version) => callback(url, version)),
-  windowMin:   () => ipcRenderer.send('window-min'),
-  windowMax:   () => ipcRenderer.send('window-max'),
-  windowClose: () => ipcRenderer.send('window-close'),
-
-  // --- Titlebar menus ---
-  showMenu:     (name, x, y) => ipcRenderer.send('show-menu', name, x, y),
-  onMenuAction: (callback) => ipcRenderer.on('menu-action', (_, action) => callback(action)),
-
   // --- Watch mode ---
   onLocalScriptsChanged: (callback) => ipcRenderer.on('local-scripts-changed', () => callback()),
 
