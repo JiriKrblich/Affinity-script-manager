@@ -129,7 +129,7 @@ Once your `registry.json` is in place, anyone can paste your GitHub link into th
 
 1. Go to the [Releases](https://github.com/JiriKrblich/Affinity-Script-Manager/releases/latest) page and download the latest `.dmg` file.
 2. Open the downloaded `.dmg`, then drag **Affinity Script Manager** into your **Applications** folder.
-3. Try to open the app. macOS will block it with a message like *"Affinity Script Manager cannot be opened because it is from an unidentified developer."*
+3. Try to open the app. macOS will block it with a message like *"Script Manager for Affinity cannot be opened because it is from an unidentified developer."*
 4. Open **System Settings → Privacy & Security**.
 5. Scroll down to the Security section. You will see a message about the blocked app — click **Open Anyway**.
 6. In the confirmation dialog that appears, click **Open** (you may be asked for your password).
