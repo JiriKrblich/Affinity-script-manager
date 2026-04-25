@@ -6,7 +6,6 @@
   <title>Script Manager for Affinity — The GUI for Affinity Scripts</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <!-- Fraunces (serif) + Inter (sans-serif) + JetBrains Mono -->
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700;9..144,800;9..144,900&family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -176,52 +175,13 @@
     }
     .btn-secondary:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
 
-    /* Screenshot frame – nyní klasický obrázek */
-    .screenshot-frame {
-      position: relative;
-      border-radius: 10px;
-      border: 1px solid var(--border-hi);
-      overflow: hidden;
-      background: var(--bg-card);
-    }
-    .screenshot-frame::before {
-      content: '';
-      position: absolute;
-      inset: -1px;
-      border-radius: 11px;
-      background: linear-gradient(135deg, rgba(142,242,96,0.1), transparent 50%);
-      pointer-events: none;
-      z-index: 1;
-    }
-    .frame-bar {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      padding: 10px 16px;
-      background: #111110;
-      border-bottom: 1px solid var(--border);
-    }
-    .frame-dot { width: 9px; height: 9px; border-radius: 50%; }
-    .frame-title {
-      flex: 1;
-      text-align: center;
-      font-family: var(--f-mono);
-      font-size: 11px;
-      color: var(--text-dim);
-    }
-    .frame-img-wrap {
-      width: 100%;
-      aspect-ratio: 16/9;
-      background: var(--bg-card);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .frame-img-wrap img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
+    /* ČISTÝ OBRÁZEK – bez jakéhokoliv rámečku, borderu, stínu, zaoblení */
+    .clean-image {
       display: block;
+      width: 100%;
+      max-width: 100%;
+      margin-top: 32px;
+      /* žádné další styly – bez border-radius, bez box-shadow, bez border */
     }
 
     /* Features & ostatní sekce beze změny */
@@ -533,19 +493,8 @@
     </a>
   </div>
 
-  <!-- Klasický obrázek místo upload bloku -->
-  <div class="screenshot-frame fade-4">
-    <div class="frame-bar">
-      <div class="frame-dot" style="background:#ff5f57"></div>
-      <div class="frame-dot" style="background:#febc2e"></div>
-      <div class="frame-dot" style="background:#28c840"></div>
-      <div class="frame-title mono">Script Manager for Affinity — Dashboard</div>
-    </div>
-    <div class="frame-img-wrap">
-      <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1600 900'%3E%3Crect width='1600' height='900' fill='%23141413'/%3E%3Crect x='80' y='80' width='600' height='420' rx='8' fill='%231a1a18' stroke='%23333330' stroke-width='1'/%3E%3Crect x='80' y='100' width='600' height='30' fill='%23242422'/%3E%3Ccircle cx='105' cy='115' r='5' fill='%23ff5f57'/%3E%3Ccircle cx='125' cy='115' r='5' fill='%23febc2e'/%3E%3Ccircle cx='145' cy='115' r='5' fill='%2328c840'/%3E%3Ctext x='380' y='120' font-family='monospace' font-size='12' fill='%23666660' text-anchor='middle'%3EMy Scripts%3C/text%3E%3Crect x='100' y='150' width='560' height='40' rx='4' fill='%232a2a28'/%3E%3Ctext x='120' y='175' font-family='sans-serif' font-size='13' fill='%23e8e8e0'%3Eauto-export.js%3C/text%3E%3Crect x='100' y='200' width='560' height='1' fill='%23333330'/%3E%3Crect x='100' y='210' width='560' height='40' rx='4' fill='%232a2a28'/%3E%3Ctext x='120' y='235' font-family='sans-serif' font-size='13' fill='%23e8e8e0'%3Eselect-layers-to-png.js%3C/text%3E%3Crect x='100' y='260' width='560' height='1' fill='%23333330'/%3E%3Crect x='100' y='270' width='560' height='40' rx='4' fill='%232a2a28'/%3E%3Ctext x='120' y='295' font-family='sans-serif' font-size='13' fill='%23e8e8e0'%3Ecanvas-grid-helper.js%3C/text%3E%3Crect x='100' y='320' width='560' height='1' fill='%23333330'/%3E%3Crect x='750' y='80' width='770' height='420' rx='8' fill='%231a1a18' stroke='%23333330' stroke-width='1'/%3E%3Ctext x='770' y='110' font-family='monospace' font-size='12' fill='%238ef260'%3EAffinity SDK Docs%3C/text%3E%3Ctext x='770' y='140' font-family='sans-serif' font-size='13' fill='%23c8c8c0'%3EgetDocument() → Document%3C/text%3E%3Ctext x='770' y='165' font-family='sans-serif' font-size='13' fill='%23666660'%3E  Returns the active Affinity document.%3C/text%3E%3Ctext x='770' y='195' font-family='sans-serif' font-size='13' fill='%23c8c8c0'%3EselectedLayers → Layer[]%3C/text%3E%3Ctext x='770' y='220' font-family='sans-serif' font-size='13' fill='%23666660'%3E  Array of currently selected layers.%3C/text%3E%3Ctext x='770' y='260' font-family='monospace' font-size='12' fill='%238ef260'%3EWatch Mode: active%3C/text%3E%3Ctext x='770' y='290' font-family='sans-serif' font-size='12' fill='%238ef260'%3E● auto-exporter.js synced%3C/text%3E%3C/svg%3E"
-           alt="Script Manager for Affinity screenshot preview">
-    </div>
-  </div>
+  <!-- ČISTÝ OBRÁZEK – žádný rámeček, žádný border, žádný stín, žádné zaoblení -->
+  <img src="app.webp" alt="Script Manager for Affinity screenshot" class="clean-image fade-4">
 </header>
 
 <!-- FEATURES -->
