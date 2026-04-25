@@ -1,6 +1,6 @@
 {
   "name": "affinity-script-manager",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Graphic UI for managing Affinity App Scripts",
   "main": "main.js",
   "scripts": {
