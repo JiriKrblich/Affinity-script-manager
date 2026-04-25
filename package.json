@@ -1,7 +1,7 @@
 {
   "name": "affinity-script-manager",
-  "version": "1.2.0",
-  "description": "Graphic UI for uploading and dowloading Affinity App Scripts",
+  "version": "1.3.0",
+  "description": "Graphic UI for managing Affinity App Scripts",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -16,17 +16,17 @@
   },
   "build": {
     "appId": "com.example.affinityscriptmanager",
-    "productName": "Affinity Script Manager",
+    "productName": "Script Manager for Affinity",
     "files": [
       "**/*"
     ],
     "mac": {
       "target": "dmg",
-      "icon": "assets/icon.icns"
+      "icon": "assets/icon.png"
     },
     "win": {
       "target": "nsis",
-      "icon": "assets/icon.ico"
+      "icon": "assets/icon.png"
     }
   }
 }

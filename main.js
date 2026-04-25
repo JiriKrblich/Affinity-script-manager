@@ -13,7 +13,7 @@ let transport;
 let localScriptsDir;
 let configPath;
 let win; 
-let settingsWin = null; 
+ipcMain.on('app-version-sync', (e) => { e.returnValue = app.getVersion(); });
 
 // --- Helper Functions ---
 function getTextContent(result) {
@@ -25,8 +25,57 @@ function parseCsvTextContent(result) {
   return [...new Set(textChunks.join(",").split(",").map((n) => n.trim()).filter(Boolean))];
 }
 
-async function callTool(client, name, args) {
-  return client.request({ method: "tools/call", params: { name, arguments: args } }, CallToolResultSchema);
+let mcpConnected = false;
+let mcpConnectPromise = null;
+
+// Establish (or re-establish) the MCP session. Safe to call multiple times — concurrent callers
+// share the same in-flight promise. Throws if the bridge is unreachable so callers can surface
+// a real error instead of falling through with a stale client.
+async function ensureMcpConnected() {
+  if (mcpConnected && client && transport) return;
+  if (mcpConnectPromise) return mcpConnectPromise;
+  mcpConnectPromise = (async () => {
+    try {
+      if (transport) { try { await transport.close(); } catch {} }
+      client = new Client({ name: "script-mgr-ui", version: "1.0.0" });
+      transport = new SSEClientTransport(new URL(SERVER_URL));
+      await client.connect(transport);
+      // Affinity's MCP requires reading the preamble doc once per session before other
+      // SDK-doc tools will return real data — otherwise list_sdk_documentation etc. respond
+      // with an "ERROR: Listing failed" payload. Prime it best-effort.
+      try {
+        await client.request(
+          { method: "tools/call", params: { name: "read_sdk_documentation_topic", arguments: { filename: "preamble" } } },
+          CallToolResultSchema
+        );
+      } catch (primeErr) {
+        console.warn('[MCP] preamble prime failed:', primeErr.message);
+      }
+      mcpConnected = true;
+    } catch (err) {
+      mcpConnected = false;
+      throw err;
+    } finally {
+      mcpConnectPromise = null;
+    }
+  })();
+  return mcpConnectPromise;
+}
+
+async function callTool(_clientIgnored, name, args) {
+  await ensureMcpConnected();
+  try {
+    return await client.request({ method: "tools/call", params: { name, arguments: args } }, CallToolResultSchema);
+  } catch (err) {
+    // If the session dropped (bridge restarted, etc.), reconnect once and retry.
+    const msg = (err && err.message) ? err.message : String(err);
+    if (/session not initialized|not connected|disconnected|closed/i.test(msg)) {
+      mcpConnected = false;
+      await ensureMcpConnected();
+      return client.request({ method: "tools/call", params: { name, arguments: args } }, CallToolResultSchema);
+    }
+    throw err;
+  }
 }
 
 // --- Bezpečná správa konfigurace ---
@@ -57,17 +106,72 @@ async function saveConfig(config) {
   await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
 }
 
+// --- Watch mode: re-push edited scripts to the bridge and notify the renderer ---
+async function startWatcher() {
+  const pending = new Map(); // filename -> timer (debounce)
+
+  const handleChange = async (filename) => {
+    if (!filename || !filename.endsWith('.js')) return;
+    const full = path.join(localScriptsDir, filename);
+    let exists = false;
+    try { await fs.stat(full); exists = true; } catch {}
+
+    if (exists) {
+      // Only auto-sync if the script is already installed in Affinity. New or
+      // newly-saved files stay local until the user explicitly clicks the
+      // install dot in My Scripts.
+      try {
+        const listResult = await callTool(client, "list_library_scripts", {});
+        const titles = parseCsvTextContent(listResult).map(t => t.toLowerCase());
+        const stem = path.parse(filename).name.toLowerCase();
+        if (titles.includes(stem)) {
+          const code = await fs.readFile(full, 'utf8');
+          await callTool(client, "save_script_to_library", {
+            title: path.parse(filename).name,
+            description: "Updated via Script Manager watch mode",
+            code,
+          }).catch(() => {});
+        }
+      } catch {} // bridge offline or not installed — renderer still gets the change ping
+    }
+    if (win && !win.isDestroyed()) win.webContents.send('local-scripts-changed');
+  };
+
+  const debounced = (filename) => {
+    const prev = pending.get(filename);
+    if (prev) clearTimeout(prev);
+    pending.set(filename, setTimeout(() => {
+      pending.delete(filename);
+      handleChange(filename);
+    }, 300));
+  };
+
+  try {
+    const watcher = fs.watch(localScriptsDir);
+    for await (const { filename } of watcher) {
+      debounced(filename);
+    }
+  } catch (err) {
+    console.warn('watch mode error:', err.message);
+  }
+}
+
 app.whenReady().then(async () => {
   localScriptsDir = path.join(app.getPath('userData'), 'MyScripts');
   configPath = path.join(app.getPath('userData'), 'config.json');
   await fs.mkdir(localScriptsDir, { recursive: true });
 
-  client = new Client({ name: "script-mgr-ui", version: "1.0.0" });
-  transport = new SSEClientTransport(new URL(SERVER_URL));
-  await client.connect(transport).catch(console.error);
+  // Eagerly attempt to connect so the Server Bridge status is accurate on first paint;
+  // failure is non-fatal — ensureMcpConnected() will retry on demand when a tool call
+  // happens (user opens Documentation, SDK search, etc.).
+  ensureMcpConnected().catch((err) => console.warn('[MCP] initial connect failed:', err.message));
+
+  startWatcher(); // fire-and-forget
 
   win = new BrowserWindow({
-    width: 1100, height: 800, title: "Affinity Script Manager",
+    width: 1200, height: 820, title: "Script Manager for Affinity",
+    minWidth: 960, minHeight: 600,
+    backgroundColor: '#1f1f1f',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true }
   });
 
@@ -77,8 +181,27 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('list-local-scripts', async () => {
     try {
-      const files = await fs.readdir(localScriptsDir);
-      return { success: true, data: files.filter(f => f.endsWith('.js')) };
+      const files = (await fs.readdir(localScriptsDir)).filter(f => f.endsWith('.js'));
+      const out = [];
+      for (const file of files) {
+        const full = path.join(localScriptsDir, file);
+        const stat = await fs.stat(full);
+        let name = path.parse(file).name;
+        let description = '';
+        let version = '';
+        try {
+          const head = (await fs.readFile(full, 'utf8')).slice(0, 4096);
+          const m = head.match(/^\s*\/\*\*([\s\S]*?)\*\//);
+          if (m) {
+            const h = m[1];
+            const n = h.match(/name:\s*(.+)/i);         if (n) name = n[1].trim();
+            const d = h.match(/description:\s*(.+)/i);   if (d) description = d[1].trim();
+            const v = h.match(/version:\s*(.+)/i);       if (v) version = v[1].trim();
+          }
+        } catch {}
+        out.push({ file, name, description, version, size: stat.size, modified: stat.mtimeMs });
+      }
+      return { success: true, data: out };
     } catch (e) { return { success: false, error: e.message }; }
   });
 
@@ -87,6 +210,20 @@ app.whenReady().then(async () => {
       await fs.unlink(path.join(localScriptsDir, filename));
       return { success: true };
     } catch (e) { return { success: false, error: e.message }; }
+  });
+
+  ipcMain.handle('read-local-script', async (e, filename) => {
+    try {
+      const code = await fs.readFile(path.join(localScriptsDir, filename), 'utf8');
+      return { success: true, data: { code } };
+    } catch (err) { return { success: false, error: err.message }; }
+  });
+
+  ipcMain.handle('save-local-script', async (e, filename, code) => {
+    try {
+      await fs.writeFile(path.join(localScriptsDir, filename), code, 'utf8');
+      return { success: true };
+    } catch (err) { return { success: false, error: err.message }; }
   });
 
   ipcMain.handle('select-file', async () => {
@@ -138,6 +275,7 @@ app.whenReady().then(async () => {
     } catch (error) { return { success: false, error: error.message }; }
   });
 
+
   ipcMain.handle('list-mcp-scripts', async () => {
     try {
       const result = await callTool(client, "list_library_scripts", {});
@@ -145,9 +283,10 @@ app.whenReady().then(async () => {
     } catch (error) { return { success: false, error: error.message }; }
   });
 
+  // "Add Script" — writes to disk only. Does NOT push to MCP: installation is an explicit
+  // action via the install dot on the My Scripts row.
   ipcMain.handle('save-script', async (event, title, description, code) => {
     try {
-      await callTool(client, "save_script_to_library", { title, description: description || "Uploaded via Script Manager", code });
       const safeFilename = title.toLowerCase().replace(/[^a-z0-9_-]/g, '-') + '.js';
       await fs.writeFile(path.join(localScriptsDir, safeFilename), code, "utf8");
       return { success: true };
@@ -168,22 +307,6 @@ app.whenReady().then(async () => {
   // ==========================================
   // --- COMMUNITY SCRIPTS & SETTINGS ---
   // ==========================================
-
-  ipcMain.on('open-settings', () => {
-    if (settingsWin) {
-      settingsWin.focus(); 
-      return;
-    }
-    settingsWin = new BrowserWindow({
-      width: 550, height: 600,
-      title: "Settings",
-      parent: win, 
-      autoHideMenuBar: true,
-      webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true }
-    });
-    settingsWin.loadFile('settings.html');
-    settingsWin.on('closed', () => { settingsWin = null; });
-  });
 
   ipcMain.handle('get-repos', async () => {
     const config = await getConfig();
@@ -256,13 +379,26 @@ app.whenReady().then(async () => {
       if (!response.ok) throw new Error("Error downloading file from server.");
       const code = await response.text();
       const safeName = filename.toLowerCase().replace(/[^a-z0-9_-]/g, '-') + '.js';
-      
+
       await fs.writeFile(path.join(localScriptsDir, safeName), code, "utf8");
-      
+
       try {
         await callTool(client, "save_script_to_library", { title: filename, description: "Installed from Community Scripts", code });
       } catch (mcpErr) {}
-      
+
+      return { success: true };
+    } catch (error) { return { success: false, error: error.message }; }
+  });
+
+  // Save-only: download to disk without pushing to the MCP bridge. Used by the "save" icon
+  // next to Install on community cards, for users who want to inspect / edit before activating.
+  ipcMain.handle('save-community-script', async (event, downloadUrl, filename) => {
+    try {
+      const response = await fetch(downloadUrl);
+      if (!response.ok) throw new Error("Error downloading file from server.");
+      const code = await response.text();
+      const safeName = filename.toLowerCase().replace(/[^a-z0-9_-]/g, '-') + '.js';
+      await fs.writeFile(path.join(localScriptsDir, safeName), code, "utf8");
       return { success: true };
     } catch (error) { return { success: false, error: error.message }; }
   });
@@ -271,18 +407,28 @@ app.whenReady().then(async () => {
   // --- DOCUMENTATION, SEARCH & UPDATES ---
   // ==========================================
 
-  ipcMain.on('open-external-repo', () => shell.openExternal('https://github.com/JiriKrblich/Affinity-Community-Scripts/issues/new'));
+  ipcMain.on('open-external-repo', () => shell.openExternal('https://github.com/JiriKrblich/Affinity-Community-Scripts/issues/new?template=contribute-script.md'));
   ipcMain.on('open-url', (event, url) => shell.openExternal(url));
 
   ipcMain.handle('fetch-docs', async () => {
     try {
       const listResult = await callTool(client, "list_sdk_documentation", {});
-      const fileNames = parseCsvTextContent(listResult);
+      const rawText = getTextContent(listResult).trim();
+      // Affinity's tools occasionally return an error message as content with a successful RPC.
+      if (!rawText || /^error[:\s]/i.test(rawText)) {
+        return { success: false, error: 'Affinity did not return a topic list: ' + (rawText || 'empty response') };
+      }
+      const fileNames = parseCsvTextContent(listResult)
+        .filter(n => n && !/^error/i.test(n) && n !== 'preamble'); // preamble is an init marker, not a user-facing topic
       const docs = [];
       for (const fileName of fileNames) {
         try {
           const readResult = await callTool(client, "read_sdk_documentation_topic", { filename: fileName });
-          docs.push({ title: fileName, content: getTextContent(readResult) });
+          const content = getTextContent(readResult);
+          // Skip topics whose content is itself an error response.
+          if (content && !/^error[:\s]/i.test(content.trim())) {
+            docs.push({ title: fileName, content });
+          }
         } catch (e) {}
       }
       return { success: true, data: docs };
