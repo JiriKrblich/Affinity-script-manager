@@ -655,7 +655,7 @@ body {
     overflow: auto;
 }
 .screen {
-    padding: 32px 36px 64px;
+    padding: 32px 36px 36px;
     max-width: 1500px;
 }
 .screen h1 {
