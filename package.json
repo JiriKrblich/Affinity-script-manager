@@ -24,6 +24,14 @@
       "target": "dmg",
       "icon": "assets/icon.png"
     },
+    "dmg": {
+      "background": "assets/DMG_background.jpg",
+      "shrink": true,
+      "window": {
+        "width": 600,
+        "height": 400
+      }
+    },
     "win": {
       "target": "nsis",
       "icon": "assets/icon.png"
