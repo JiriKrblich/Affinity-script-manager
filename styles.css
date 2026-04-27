@@ -756,7 +756,7 @@ body {
     border: 1px solid var(--border);
     border-radius: var(--r-lg);
     overflow: hidden;
-    background: var(--bg-chrome);
+    background: var(--bg-card);
     margin-bottom: 28px;
 }
 .bridge-row {
@@ -771,7 +771,7 @@ body {
     border-top: none;
 }
 .bridge-row.header {
-    background: var(--bg-chrome);
+    background: var(--bg-card);
     padding: 9px 18px;
 }
 .bridge-row.header .col {
@@ -863,7 +863,7 @@ body {
     margin-top: 14px;
 }
 .card {
-    background: var(--bg-card);
+    background: var(--bg-chrome);
     border: 1px solid var(--border);
     border-radius: var(--r-lg);
     padding: 18px;
@@ -875,7 +875,7 @@ body {
 }
 .card:hover {
     border-color: var(--border-hi);
-    background: var(--bg-card-hi);
+    background: var(--bg-chrome-hi);
 }
 .card-title {
     font: 600 15px/1.3 var(--f-sans);
@@ -1014,7 +1014,7 @@ body {
 }
 .c-card {
     position: relative;
-    background: var(--bg-card);
+    background: var(--bg-chrome);
     border: 1px solid var(--border);
     border-radius: var(--r-lg);
     padding: 20px;
@@ -1026,7 +1026,7 @@ body {
 }
 .c-card:hover {
     border-color: var(--border-hi);
-    background: var(--bg-card-hi);
+    background: var(--bg-chrome-hi);
 }
 .c-card .top-row {
     display: flex;
