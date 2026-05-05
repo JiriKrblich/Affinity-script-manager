@@ -1,6 +1,6 @@
 {
   "name": "affinity-script-manager",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Graphic UI for managing Affinity App Scripts",
   "main": "main.js",
   "scripts": {
@@ -23,6 +23,14 @@
     "mac": {
       "target": "dmg",
       "icon": "assets/icon.png"
+    },
+    "dmg": {
+      "background": "assets/DMG_background.jpg",
+      "shrink": true,
+      "window": {
+        "width": 600,
+        "height": 400
+      }
     },
     "win": {
       "target": "nsis",
