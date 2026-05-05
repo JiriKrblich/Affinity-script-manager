@@ -125,6 +125,30 @@ Once your `registry.json` is in place, anyone can paste your GitHub link into th
 
 ---
 
+## Troubleshooting
+
+### Script does not install into Affinity
+
+If a script does not appear in Affinity after clicking **Install**, check the following:
+
+1. **Make sure MCP is enabled in Affinity.**  
+   Affinity Script Manager communicates with Affinity through the local MCP bridge. If MCP is disabled or does not have the required permissions, the app cannot push scripts into Affinity.
+
+2. **Allow MCP to save scripts/workflows to the Scripts panel.**  
+   In Affinity settings, check the MCP/AI assistant permissions and make sure the bridge is allowed to save scripts to Affinity.
+
+3. **Open the Scripts panel in Affinity.**  
+   Go to **Window → General → Scripts**.
+
+4. **Create at least one category in the Scripts panel.**  
+   Affinity needs a category in the Scripts panel before scripts can be installed there.  
+   In the Scripts panel, use **Create New Category** and create any category, for example `My Scripts`.
+
+5. **Try installing again.**  
+   Return to Affinity Script Manager and click the install dot next to your script again. The script should now appear in Affinity's Scripts panel.
+
+---
+
 ## Installation on macOS
 
 1. Go to the [Releases](https://github.com/JiriKrblich/Affinity-Script-Manager/releases/latest) page and download the latest `.dmg` file.
