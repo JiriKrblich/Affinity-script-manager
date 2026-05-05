@@ -380,6 +380,68 @@
       border-radius: 3px;
       display: inline-block;
     }
+
+    .troubleshooting-section { padding: 96px 0; border-top: 1px solid var(--border); }
+    .troubleshooting-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      margin-top: 48px;
+      text-align: left;
+    }
+    .troubleshooting-card {
+      background: var(--bg-card);
+      padding: 28px 24px;
+    }
+    .troubleshooting-card.wide { grid-column: 1 / -1; }
+    .trouble-label {
+      font-family: var(--f-mono);
+      font-size: 11px;
+      color: var(--accent);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    .trouble-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-strong);
+      margin-bottom: 8px;
+      font-family: var(--f-body);
+    }
+    .trouble-desc {
+      font-size: 13px;
+      color: var(--text-dim);
+      line-height: 1.65;
+      font-family: var(--f-body);
+    }
+    .trouble-list {
+      list-style: none;
+      display: grid;
+      gap: 12px;
+      margin-top: 18px;
+    }
+    .trouble-list li {
+      position: relative;
+      padding-left: 18px;
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.6;
+    }
+    .trouble-list li::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 9px;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
     .install-section { padding: 96px 0; border-top: 1px solid var(--border); }
     .install-inner { text-align: center; }
     .install-steps {
@@ -455,6 +517,8 @@
       .community-inner { grid-template-columns: 1fr; gap: 40px; }
       .editor-inner { grid-template-columns: 1fr; gap: 40px; }
       .install-steps { grid-template-columns: 1fr 1fr; }
+      .troubleshooting-grid { grid-template-columns: 1fr; }
+      .troubleshooting-card.wide { grid-column: auto; }
       .footer-inner { flex-direction: column; align-items: flex-start; }
     }
     @media (max-width: 520px) {
@@ -470,6 +534,7 @@
 <nav>
   <div class="nav-logo">Script Manager for Affinity</div>
   <div class="nav-links">
+    <a href="#troubleshooting">Troubleshooting</a>
     <a href="https://github.com/JiriKrblich/Affinity-Community-Scripts">Community Scripts</a>
     <a href="https://github.com/JiriKrblich/Affinity-Script-Manager/releases/latest">Releases</a>
     <a href="https://github.com/JiriKrblich/Affinity-Script-Manager" target="_blank" class="nav-gh">
@@ -535,6 +600,39 @@
     <div class="editor-inner">
       <div class="editor-preview"><div class="editor-bar"><div class="editor-bar-dots"><div class="editor-bar-dot" style="background:#ff5f57"></div><div class="editor-bar-dot" style="background:#febc2e"></div><div class="editor-bar-dot" style="background:#28c840"></div></div><div class="editor-bar-title">auto-exporter.js — Code Editor</div><div class="editor-save">Save</div></div><div class="code-body"><span class="code-line"><span class="code-comment">/**</span></span><span class="code-line"><span class="code-comment"> * name: Auto Exporter</span></span><span class="code-line"><span class="code-comment"> * description: Exports selected layers as PNG.</span></span><span class="code-line"><span class="code-comment"> * version: 1.2.0</span></span><span class="code-line"><span class="code-comment"> * author: you</span></span><span class="code-line"><span class="code-comment"> */</span></span><span class="code-line">&nbsp;</span><span class="code-line"><span class="code-keyword">async function</span> <span class="code-fn">exportLayers</span>() {</span><span class="code-line"><span class="code-indent"></span><span class="code-keyword">const</span> doc = <span class="code-keyword">await</span> <span class="code-fn">affinity</span>.getDocument();</span><span class="code-line"><span class="code-indent"></span><span class="code-keyword">const</span> layers = doc.selectedLayers;</span><span class="code-line"><span class="code-indent"></span><span class="code-keyword">for</span> (<span class="code-keyword">const</span> layer <span class="code-keyword">of</span> layers) {</span><span class="code-line"><span class="code-indent"></span><span class="code-indent"></span><span class="code-keyword">await</span> layer.<span class="code-fn">exportAs</span>({ format: <span class="code-string">'png'</span>, scale: <span class="code-string">2</span> });</span><span class="code-line"><span class="code-indent"></span>}</span><span class="code-line">}</span></div></div>
       <div><div class="section-label">Built-in Code Editor</div><h2 class="section-title">Write scripts without leaving the <em>app</em>.</h2><p class="section-sub">Full Ace editor with JavaScript syntax highlighting. Start from a pre-filled metadata template or fork a community script and adapt it.</p><div class="watch-badge">watch mode: on — auto-syncing edits</div><ul class="editor-list"><li>Cmd/Ctrl+S to save — Watch Mode instantly re-pushes to Affinity if the script is already installed</li><li>New scripts start from a metadata header template, so they're immediately compatible with the registry format</li><li>Unsaved changes are protected — the app warns before you navigate away</li><li>Drag and drop <span class="inline-code-bg">.js</span> files onto the sidebar to import them instantly</li></ul></div>
+    </div>
+  </div>
+</section>
+
+
+<!-- TROUBLESHOOTING -->
+<section class="troubleshooting-section" id="troubleshooting">
+  <div class="container">
+    <div class="section-label">Troubleshooting</div>
+    <h2 class="section-title">Scripts not installing into <em>Affinity</em>?</h2>
+    <p class="section-sub">Most install issues are caused by MCP permissions or a missing Scripts panel category inside Affinity.</p>
+
+    <div class="troubleshooting-grid">
+      <div class="troubleshooting-card">
+        <div class="trouble-label">Check 01</div>
+        <div class="trouble-title">Enable MCP in Affinity</div>
+        <div class="trouble-desc">Affinity Script Manager communicates with Affinity through the local MCP bridge. If MCP is disabled or does not have the required permissions, the app cannot push scripts into Affinity.</div>
+      </div>
+      <div class="troubleshooting-card">
+        <div class="trouble-label">Check 02</div>
+        <div class="trouble-title">Allow saving to the Scripts panel</div>
+        <div class="trouble-desc">Open Affinity settings and check the MCP/AI assistant permissions. Make sure the bridge is allowed to save scripts or workflows to Affinity.</div>
+      </div>
+      <div class="troubleshooting-card wide">
+        <div class="trouble-label">Check 03</div>
+        <div class="trouble-title">Create a Scripts panel category</div>
+        <div class="trouble-desc">Affinity needs at least one category in the Scripts panel before scripts can be installed there.</div>
+        <ul class="trouble-list">
+          <li>In Affinity, open <span class="inline-code-bg">Window → General → Scripts</span>.</li>
+          <li>Click <span class="inline-code-bg">Create New Category</span> and create a category, for example <span class="inline-code-bg">My Scripts</span>.</li>
+          <li>Return to Affinity Script Manager and click the install dot next to your script again.</li>
+        </ul>
+      </div>
     </div>
   </div>
 </section>
