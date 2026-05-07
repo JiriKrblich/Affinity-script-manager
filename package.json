@@ -35,6 +35,10 @@
     "win": {
       "target": "nsis",
       "icon": "assets/icon.png"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icon.png"
     }
   }
 }
