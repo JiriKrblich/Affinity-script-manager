@@ -20,8 +20,8 @@ contextBridge.exposeInMainWorld('api', {
   listCommunityScripts: () => ipcRenderer.invoke('list-community-scripts'),
   getCommunityFavorites: () => ipcRenderer.invoke('get-community-favorites'),
   toggleCommunityFavorite: (favorite) => ipcRenderer.invoke('toggle-community-favorite', favorite),
-  downloadCommunityScript: (url, filename) => ipcRenderer.invoke('download-community-script', url, filename),
-  saveCommunityScript:     (url, filename) => ipcRenderer.invoke('save-community-script',     url, filename),
+  downloadCommunityScript: (url, filename, metadata) => ipcRenderer.invoke('download-community-script', url, filename, metadata),
+  saveCommunityScript:     (url, filename, metadata) => ipcRenderer.invoke('save-community-script',     url, filename, metadata),
   openExternalRepo: () => ipcRenderer.send('open-external-repo'),
 
   // --- Dokumentace a Hledání ---

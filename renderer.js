@@ -39,6 +39,15 @@ function formatContributors(contributors) {
   return contributors || "";
 }
 
+function communityScriptMetadata(script) {
+  return {
+    name: script.name || "",
+    description: script.description || "",
+    version: script.version || "",
+    author: script.author || "",
+  };
+}
+
 const NAV_SECTIONS = [
   {
     label: "Library",
@@ -514,6 +523,7 @@ async function renderLocal(root) {
         const r = await window.api.saveCommunityScript(
           update.download_url,
           update.name,
+          communityScriptMetadata(update),
         );
         if (r && r.success) {
           renderScreen();
@@ -851,6 +861,7 @@ async function renderCommunity(root) {
     const r = await window.api.saveCommunityScript(
       script.download_url,
       script.name,
+      communityScriptMetadata(script),
     );
     if (!r || !r.success) {
       alert((r && r.error) || "Save failed");
@@ -869,6 +880,7 @@ async function renderCommunity(root) {
     const r = await window.api.downloadCommunityScript(
       script.download_url,
       script.name,
+      communityScriptMetadata(script),
     );
     if (!r || !r.success) {
       alert((r && r.error) || "Download failed");
@@ -1787,7 +1799,11 @@ async function renderDevelop(root) {
       const original = trigger.textContent;
       trigger.innerHTML = '<span class="loading">Forking</span>';
       trigger.disabled = true;
-      const r = await window.api.saveCommunityScript(s.download_url, s.name);
+      const r = await window.api.saveCommunityScript(
+        s.download_url,
+        s.name,
+        communityScriptMetadata(s),
+      );
       if (!r || !r.success) {
         alert((r && r.error) || "Fork failed");
         trigger.textContent = original;
