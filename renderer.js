@@ -4,6 +4,7 @@ const state = {
   communityQuery: "",
   communityFilter: "all",
   communitySort: "name",
+  favoriteCommunityIds: new Set(),
   installedIds: new Set(),
   editorFile: null,
   editorDirty: false,
@@ -13,6 +14,30 @@ const state = {
 
 // Live Ace editor instance (outside `state` so it's not treated as declarative UI state).
 let activeEditor = null;
+
+function communityFavoriteKey(script) {
+  if (!script || !script._source || !script.id) return "";
+  return `${script._source}::${script.id}`;
+}
+
+function communityPreviewUrl(script) {
+  return (
+    (script &&
+      (script._imageUrl ||
+        script.image ||
+        script.image_url ||
+        script.preview_image ||
+        script.screenshot)) ||
+    ""
+  );
+}
+
+function formatContributors(contributors) {
+  if (Array.isArray(contributors)) {
+    return contributors.filter(Boolean).join(", ");
+  }
+  return contributors || "";
+}
 
 const NAV_SECTIONS = [
   {
@@ -154,7 +179,7 @@ function openNewScriptInEditor() {
   navigate("editor");
 }
 
-function wireBrand() {
+async function wireBrand() {
   document
     .getElementById("ico-upload")
     .appendChild(Ico("plus", { size: 12, sw: 1.8 }));
@@ -167,19 +192,36 @@ function wireBrand() {
     // Chevron icon pointing left (collapses sidebar)
     toggleBtn.appendChild(Ico("chevronL", { size: 14 }));
 
-    // Restore persisted state
-    if (localStorage.getItem("sidebar-collapsed") === "1") {
+    const configState = await window.api.getSidebarCollapsed();
+    const legacyValue = localStorage.getItem("sidebar-collapsed");
+    const legacyState = legacyValue === "1";
+    const isInitiallyCollapsed =
+      legacyValue != null
+        ? legacyState
+        : configState && configState.success
+          ? configState.data
+          : false;
+
+    if (isInitiallyCollapsed) {
       sidebar.classList.add("collapsed");
+    }
+    if (legacyValue != null) {
+      window.api.setSidebarCollapsed(isInitiallyCollapsed);
+      localStorage.removeItem("sidebar-collapsed");
     }
 
     toggleBtn.addEventListener("click", () => {
       const isCollapsed = sidebar.classList.toggle("collapsed");
-      localStorage.setItem("sidebar-collapsed", isCollapsed ? "1" : "0");
+      window.api.setSidebarCollapsed(isCollapsed);
+      localStorage.removeItem("sidebar-collapsed");
     });
   }
 }
 
 window.addEventListener("DOMContentLoaded", () => {
+  if (navigator.platform && navigator.platform.toLowerCase().includes("mac")) {
+    document.body.classList.add("platform-darwin");
+  }
   document.getElementById("brand-version").textContent = "for Affinity";
   wireBrand();
   wireDropZone();
@@ -300,6 +342,15 @@ function escapeHtml(s) {
         c
       ],
   );
+}
+function scriptFilenameFromInput(input) {
+  const base = String(input || "")
+    .trim()
+    .replace(/\.js$/i, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return base ? `${base}.js` : "";
 }
 
 // Compare dotted versions, returns -1 / 0 / +1. Missing parts treated as 0.
@@ -506,6 +557,12 @@ async function renderLocal(root) {
       }),
     );
     actions.appendChild(
+      mkBtn("tag", "Rename file", (e) => {
+        e.stopPropagation();
+        openRenameLocalModal(it);
+      }),
+    );
+    actions.appendChild(
       mkBtn("download", "Export to disk", (e) => {
         e.stopPropagation();
         window.api.exportToDisk(it.file);
@@ -660,6 +717,7 @@ async function renderCommunity(root) {
       </div>
       <div class="sort">
         <select id="c-sort">
+          <option value="recent">Recently Added</option>
           <option value="name">A — Z</option>
           <option value="category">Category</option>
           <option value="author">Author</option>
@@ -696,6 +754,12 @@ async function renderCommunity(root) {
 
   const res = await window.api.listCommunityScripts();
   const scripts = res && res.success ? res.data || [] : [];
+  const favoritesRes = await window.api.getCommunityFavorites();
+  state.favoriteCommunityIds = new Set(
+    favoritesRes && favoritesRes.success
+      ? (favoritesRes.data || []).map((item) => `${item.repo}::${item.id}`)
+      : [],
+  );
 
   screen.querySelector("#c-count").textContent = scripts.length;
   updateNavCount("community", scripts.length);
@@ -705,19 +769,32 @@ async function renderCommunity(root) {
   // Build category list
   const catCounts = new Map();
   catCounts.set("all", scripts.length);
+  catCounts.set("__favorites", 0);
   for (const s of scripts) {
     const c = (s.category || "other").toLowerCase();
     catCounts.set(c, (catCounts.get(c) || 0) + 1);
   }
 
   const tabs = screen.querySelector("#c-tabs");
+  function favoriteCount() {
+    return scripts.filter((s) =>
+      state.favoriteCommunityIds.has(communityFavoriteKey(s)),
+    ).length;
+  }
+
   function renderTabs() {
+    catCounts.set("__favorites", favoriteCount());
     tabs.innerHTML = "";
     for (const [c, count] of catCounts) {
       const btn = document.createElement("button");
       btn.className =
         "cat-tab" + (state.communityFilter === c ? " active" : "");
-      const label = c === "all" ? "All" : c[0].toUpperCase() + c.slice(1);
+      const label =
+        c === "all"
+          ? "All"
+          : c === "__favorites"
+            ? "Favorites"
+            : c[0].toUpperCase() + c.slice(1);
       btn.innerHTML = `<span>${escapeHtml(label)}</span><span class="count">${count}</span>`;
       btn.onclick = () => {
         state.communityFilter = c;
@@ -743,24 +820,202 @@ async function renderCommunity(root) {
 
   const grid = screen.querySelector("#c-grid");
 
+  function applyFavoritesResponse(response) {
+    state.favoriteCommunityIds = new Set(
+      (response.data || []).map((item) => `${item.repo}::${item.id}`),
+    );
+    renderTabs();
+    paint();
+  }
+
+  async function toggleCommunityFavorite(script, button) {
+    if (button) button.disabled = true;
+    const r = await window.api.toggleCommunityFavorite({
+      repo: script._source,
+      id: script.id,
+    });
+    if (button) button.disabled = false;
+    if (!r || !r.success) {
+      alert((r && r.error) || "Favorite update failed");
+      return false;
+    }
+    applyFavoritesResponse(r);
+    return true;
+  }
+
+  async function saveCommunityScriptToLibrary(script, button) {
+    if (button) button.disabled = true;
+    const r = await window.api.saveCommunityScript(
+      script.download_url,
+      script.name,
+    );
+    if (!r || !r.success) {
+      alert((r && r.error) || "Save failed");
+      if (button) button.disabled = false;
+      return false;
+    }
+    return true;
+  }
+
+  async function installCommunityScript(script, button) {
+    if (state.installedIds.has(script.download_url)) return true;
+    if (button) {
+      button.innerHTML = '<span class="loading">Installing</span>';
+      button.disabled = true;
+    }
+    const r = await window.api.downloadCommunityScript(
+      script.download_url,
+      script.name,
+    );
+    if (!r || !r.success) {
+      alert((r && r.error) || "Download failed");
+      if (button) {
+        button.textContent = "Install";
+        button.disabled = false;
+      }
+      return false;
+    }
+    state.installedIds.add(script.download_url);
+    if (button) {
+      button.classList.add("installed");
+      button.textContent = "\u2713 Installed";
+    }
+    paint();
+    return true;
+  }
+
+  function openCommunityDetailModal(script) {
+    const bd = document.createElement("div");
+    bd.className = "modal-backdrop";
+    const imageUrl = communityPreviewUrl(script);
+    const contributors = formatContributors(script.contributors);
+    const isFavorite = state.favoriteCommunityIds.has(
+      communityFavoriteKey(script),
+    );
+    const isInstalled = state.installedIds.has(script.download_url);
+    bd.innerHTML = `
+      <div class="modal community-detail-modal">
+        <div class="modal-head compact icon-only">
+          <button class="icon-btn" id="m-close"></button>
+        </div>
+        <div class="modal-body community-detail-body">
+          <div class="community-detail-preview">
+            ${
+              imageUrl
+                ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(script.name || "Community script preview")}">`
+                : `<div class="community-detail-placeholder">No preview image</div>`
+            }
+          </div>
+          <div>
+            <h2>${escapeHtml(script.name || "(untitled)")}</h2>
+            <div class="community-detail-author">
+              <span>by ${escapeHtml(script.author || "community")}</span>
+              ${
+                contributors
+                  ? `<span class="community-detail-separator">|</span><span>contributors: ${escapeHtml(contributors)}</span>`
+                  : ""
+              }
+            </div>
+          </div>
+          <div class="community-detail-meta">
+            <span class="tag">v${escapeHtml(script.version || "1.0.0")}</span>
+            <span class="tag">${escapeHtml((script.category || "other").toLowerCase())}</span>
+          </div>
+          <p>${escapeHtml(script.description || "")}</p>
+        </div>
+        <div class="modal-foot community-detail-actions">
+          <button class="gh-btn" id="m-favorite"></button>
+          <button class="gh-btn" id="m-save"></button>
+          <button class="accent-btn${isInstalled ? " installed" : ""}" id="m-install">${isInstalled ? "\u2713 Installed" : "Install"}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(bd);
+
+    const close = () => bd.remove();
+    bd.querySelector("#m-close").appendChild(Ico("close", { size: 12 }));
+    bd.querySelector("#m-close").onclick = close;
+    bd.addEventListener("click", (e) => {
+      if (e.target === bd) close();
+    });
+
+    const previewImg = bd.querySelector(".community-detail-preview img");
+    if (previewImg) {
+      previewImg.onerror = () => {
+        previewImg.replaceWith(
+          Object.assign(document.createElement("div"), {
+            className: "community-detail-placeholder",
+            textContent: "Preview image unavailable",
+          }),
+        );
+      };
+    }
+
+    const favoriteBtn = bd.querySelector("#m-favorite");
+    const paintFavoriteBtn = () => {
+      const active = state.favoriteCommunityIds.has(communityFavoriteKey(script));
+      favoriteBtn.classList.toggle("active", active);
+      favoriteBtn.replaceChildren(Ico("star", { size: 14, sw: 1.35 }));
+      favoriteBtn.append(document.createTextNode(active ? " Favorited" : " Favorite"));
+      favoriteBtn.title = active ? "Remove from favorites" : "Add to favorites";
+    };
+    paintFavoriteBtn();
+    favoriteBtn.onclick = async () => {
+      const updated = await toggleCommunityFavorite(script, favoriteBtn);
+      if (updated) paintFavoriteBtn();
+    };
+
+    const saveBtn = bd.querySelector("#m-save");
+    saveBtn.appendChild(Ico("download", { size: 14, sw: 1.4 }));
+    saveBtn.append(document.createTextNode(" Download"));
+    saveBtn.onclick = async () => {
+      const saved = await saveCommunityScriptToLibrary(script, saveBtn);
+      if (!saved) return;
+      saveBtn.replaceChildren(Ico("check", { size: 14, sw: 1.6 }));
+      saveBtn.append(document.createTextNode(" Downloaded"));
+      setTimeout(() => {
+        if (!document.body.contains(bd)) return;
+        saveBtn.replaceChildren(Ico("download", { size: 14, sw: 1.4 }));
+        saveBtn.append(document.createTextNode(" Download"));
+        saveBtn.disabled = false;
+      }, 1600);
+    };
+
+    const installBtn = bd.querySelector("#m-install");
+    installBtn.disabled = isInstalled;
+    installBtn.onclick = () => installCommunityScript(script, installBtn);
+  }
+
   function paint() {
     const q = state.communityQuery.toLowerCase();
     let filtered = scripts.filter((s) => {
-      if (
+      const favoriteKey = communityFavoriteKey(s);
+      if (state.communityFilter === "__favorites") {
+        if (!state.favoriteCommunityIds.has(favoriteKey)) return false;
+      } else if (
         state.communityFilter !== "all" &&
         (s.category || "other").toLowerCase() !== state.communityFilter
-      )
+      ) {
         return false;
+      }
       if (!q) return true;
       return [s.name, s.description, s.author].some((v) =>
         (v || "").toLowerCase().includes(q),
       );
     });
-    filtered.sort((a, b) =>
-      (a[state.communitySort] || "").localeCompare(
-        b[state.communitySort] || "",
-      ),
-    );
+    if (state.communitySort === "recent") {
+      filtered.sort((a, b) => {
+        const orderDiff =
+          (b._communityOrder ?? -1) - (a._communityOrder ?? -1);
+        if (orderDiff !== 0) return orderDiff;
+        return (a.name || "").localeCompare(b.name || "");
+      });
+    } else {
+      filtered.sort((a, b) =>
+        (a[state.communitySort] || "").localeCompare(
+          b[state.communitySort] || "",
+        ),
+      );
+    }
 
     grid.innerHTML = "";
     if (filtered.length === 0) {
@@ -769,6 +1024,8 @@ async function renderCommunity(root) {
         "grid-column: 1/-1; text-align:center; padding:48px; color:var(--text-faint); font-size:13px;";
       empty.textContent = q
         ? `No scripts match "${q}".`
+        : state.communityFilter === "__favorites"
+          ? "No favorite scripts yet."
         : "No scripts in this category.";
       grid.appendChild(empty);
       return;
@@ -776,13 +1033,18 @@ async function renderCommunity(root) {
 
     filtered.forEach((s) => {
       const installed = state.installedIds.has(s.download_url);
+      const favoriteKey = communityFavoriteKey(s);
+      const isFavorite = state.favoriteCommunityIds.has(favoriteKey);
       const card = document.createElement("div");
       card.className = "c-card";
       const cardHtml = [];
       cardHtml.push(`
         <div class="top-row">
           <h3>${escapeHtml(s.name || "(untitled)")}</h3>
-          <span class="tag">v${escapeHtml(s.version || "1.0.0")}</span>
+          <div class="card-actions">
+            <span class="tag">v${escapeHtml(s.version || "1.0.0")}</span>
+            <button class="icon-btn c-favorite${isFavorite ? " active" : ""}" title="${isFavorite ? "Remove from favorites" : "Add to favorites"}"></button>
+          </div>
         </div>
         <div class="author">by ${escapeHtml(s.author || "community")}</div>
         <div class="desc">${escapeHtml(s.description || "")}</div>
@@ -796,45 +1058,34 @@ async function renderCommunity(root) {
       `);
       card.innerHTML = cardHtml.join("");
 
+      const favoriteBtn = card.querySelector(".c-favorite");
+      favoriteBtn.appendChild(Ico("star", { size: 14, sw: 1.35 }));
+      favoriteBtn.onclick = async (e) => {
+        e.stopPropagation();
+        await toggleCommunityFavorite(s, favoriteBtn);
+      };
+
       const saveBtn = card.querySelector(".c-save");
       saveBtn.appendChild(Ico("download", { size: 13, sw: 1.4 }));
       saveBtn.onclick = async (e) => {
         e.stopPropagation();
-        saveBtn.disabled = true;
-        const r = await window.api.saveCommunityScript(s.download_url, s.name);
-        if (r && r.success) {
-          saveBtn.replaceChildren(Ico("check", { size: 13, sw: 1.6 }));
-          saveBtn.title = "Saved to My Scripts";
-          setTimeout(() => {
-            saveBtn.replaceChildren(Ico("download", { size: 13, sw: 1.4 }));
-            saveBtn.title = "Save to My Scripts (don't install)";
-            saveBtn.disabled = false;
-          }, 1600);
-        } else {
-          alert((r && r.error) || "Save failed");
+        const saved = await saveCommunityScriptToLibrary(s, saveBtn);
+        if (!saved) return;
+        saveBtn.replaceChildren(Ico("check", { size: 13, sw: 1.6 }));
+        saveBtn.title = "Saved to My Scripts";
+        setTimeout(() => {
+          saveBtn.replaceChildren(Ico("download", { size: 13, sw: 1.4 }));
+          saveBtn.title = "Save to My Scripts (don't install)";
           saveBtn.disabled = false;
-        }
+        }, 1600);
       };
 
       const btn = card.querySelector(".install-btn");
-      btn.onclick = async () => {
-        if (installed) return;
-        btn.innerHTML = '<span class="loading">Installing</span>';
-        btn.disabled = true;
-        const r = await window.api.downloadCommunityScript(
-          s.download_url,
-          s.name,
-        );
-        if (r && r.success) {
-          state.installedIds.add(s.download_url);
-          btn.classList.add("installed");
-          btn.textContent = "\u2713 Installed";
-        } else {
-          alert((r && r.error) || "Download failed");
-          btn.textContent = "Install";
-          btn.disabled = false;
-        }
+      btn.onclick = async (e) => {
+        e.stopPropagation();
+        await installCommunityScript(s, btn);
       };
+      card.onclick = () => openCommunityDetailModal(s);
       grid.appendChild(card);
     });
   }
@@ -1113,6 +1364,72 @@ function openDownloadModal(title) {
   };
 }
 
+function openRenameLocalModal(script) {
+  const bd = document.createElement("div");
+  bd.className = "modal-backdrop";
+  const currentBase = script.file.replace(/\.js$/i, "");
+  bd.innerHTML = `
+    <div class="modal" style="max-width:400px">
+      <div class="modal-head">
+        <h3>Rename File</h3>
+        <button class="icon-btn" id="m-close"></button>
+      </div>
+      <div class="modal-body">
+        <div>
+          <label>File name</label>
+          <input id="m-name" type="text" value="${escapeHtml(currentBase)}" autocomplete="off" spellcheck="false">
+        </div>
+        <p id="m-preview"></p>
+      </div>
+      <div class="modal-foot">
+        <button class="gh-btn" id="m-cancel">Cancel</button>
+        <button class="accent-btn" id="m-ok">Rename</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bd);
+
+  const input = bd.querySelector("#m-name");
+  const preview = bd.querySelector("#m-preview");
+  const okBtn = bd.querySelector("#m-ok");
+  const close = () => bd.remove();
+  const updatePreview = () => {
+    const next = scriptFilenameFromInput(input.value);
+    preview.textContent = next ? `Will become ${next}` : "Enter a valid name.";
+    okBtn.disabled = !next || next === script.file;
+  };
+
+  bd.querySelector("#m-close").appendChild(Ico("close", { size: 12 }));
+  bd.querySelector("#m-close").onclick = close;
+  bd.querySelector("#m-cancel").onclick = close;
+  bd.addEventListener("click", (e) => {
+    if (e.target === bd) close();
+  });
+  input.addEventListener("input", updatePreview);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") okBtn.click();
+  });
+
+  okBtn.onclick = async () => {
+    const next = scriptFilenameFromInput(input.value);
+    if (!next || next === script.file) return;
+    okBtn.innerHTML = '<span class="loading">Renaming</span>';
+    okBtn.disabled = true;
+    const r = await window.api.renameLocalScript(script.file, next);
+    if (!r || !r.success) {
+      alert((r && r.error) || "Rename failed");
+      okBtn.textContent = "Rename";
+      updatePreview();
+      return;
+    }
+    close();
+    renderScreen();
+  };
+
+  input.focus();
+  input.select();
+  updatePreview();
+}
+
 // ---------- Settings modal (internal — replaces the separate window) ----------
 const DEFAULT_COMMUNITY_REPO =
   "https://raw.githubusercontent.com/JiriKrblich/Affinity-Community-Scripts/refs/heads/main/registry.json";
@@ -1316,17 +1633,12 @@ async function renderEditor(root) {
         nameInput && nameInput.focus();
         return;
       }
-      const base = raw
-        .replace(/\.js$/i, "")
-        .toLowerCase()
-        .replace(/[^a-z0-9_-]/g, "-")
-        .replace(/^-+|-+$/g, "");
-      if (!base) {
+      targetFilename = scriptFilenameFromInput(raw);
+      if (!targetFilename) {
         alert("Please enter a valid name (letters, numbers, dashes).");
         nameInput && nameInput.focus();
         return;
       }
-      targetFilename = base + ".js";
     } else {
       targetFilename = filename;
     }

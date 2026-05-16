@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('api', {
   // --- Lokální skripty ---
   listLocalScripts: () => ipcRenderer.invoke('list-local-scripts'),
   deleteLocalScript: (filename) => ipcRenderer.invoke('delete-local-script', filename),
+  renameLocalScript: (filename, newName) => ipcRenderer.invoke('rename-local-script', filename, newName),
   readLocalScript: (filename) => ipcRenderer.invoke('read-local-script', filename),
   saveLocalScript: (filename, code) => ipcRenderer.invoke('save-local-script', filename, code),
   selectFile: () => ipcRenderer.invoke('select-file'),
@@ -17,6 +18,8 @@ contextBridge.exposeInMainWorld('api', {
 
   // --- Komunitní Marketplace ---
   listCommunityScripts: () => ipcRenderer.invoke('list-community-scripts'),
+  getCommunityFavorites: () => ipcRenderer.invoke('get-community-favorites'),
+  toggleCommunityFavorite: (favorite) => ipcRenderer.invoke('toggle-community-favorite', favorite),
   downloadCommunityScript: (url, filename) => ipcRenderer.invoke('download-community-script', url, filename),
   saveCommunityScript:     (url, filename) => ipcRenderer.invoke('save-community-script',     url, filename),
   openExternalRepo: () => ipcRenderer.send('open-external-repo'),
@@ -29,6 +32,8 @@ contextBridge.exposeInMainWorld('api', {
   getRepos: () => ipcRenderer.invoke('get-repos'),
   addRepo: (url) => ipcRenderer.invoke('add-repo', url),
   removeRepo: (url) => ipcRenderer.invoke('remove-repo', url),
+  getSidebarCollapsed: () => ipcRenderer.invoke('get-sidebar-collapsed'),
+  setSidebarCollapsed: (collapsed) => ipcRenderer.invoke('set-sidebar-collapsed', collapsed),
   onReposChanged: (callback) => ipcRenderer.on('repos-changed', callback), // NOVÉ
 
   // --- Systémové (Aktualizace) ---

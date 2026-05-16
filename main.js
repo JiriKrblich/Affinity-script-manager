@@ -43,6 +43,37 @@ function parseCsvTextContent(result) {
   ];
 }
 
+function resolveCommunityAssetUrl(registryUrl, assetUrl) {
+  if (!assetUrl) return "";
+  try {
+    return new URL(assetUrl, registryUrl).toString();
+  } catch {
+    return assetUrl;
+  }
+}
+
+function assertLocalScriptFilename(filename) {
+  if (!filename || typeof filename !== "string") {
+    throw new Error("Missing script filename.");
+  }
+  if (path.basename(filename) !== filename || path.extname(filename) !== ".js") {
+    throw new Error("Invalid script filename.");
+  }
+  return filename;
+}
+
+function localScriptFilenameFromInput(input) {
+  const base = String(input || "")
+    .trim()
+    .replace(/\.js$/i, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  if (!base) throw new Error("Please enter a valid script name.");
+  return `${base}.js`;
+}
+
 let mcpConnected = false;
 let mcpConnectPromise = null;
 
@@ -134,6 +165,19 @@ async function getConfig() {
     needsSave = true;
   }
 
+  if (
+    !config.favoriteCommunityScripts ||
+    !Array.isArray(config.favoriteCommunityScripts)
+  ) {
+    config.favoriteCommunityScripts = [];
+    needsSave = true;
+  }
+
+  if (typeof config.sidebarCollapsed !== "boolean") {
+    config.sidebarCollapsed = false;
+    needsSave = true;
+  }
+
   if (needsSave) await saveConfig(config);
   return config;
 }
@@ -222,6 +266,12 @@ app.whenReady().then(async () => {
     minWidth: 960,
     minHeight: 600,
     backgroundColor: "#1f1f1f",
+    ...(process.platform === "darwin"
+      ? {
+          titleBarStyle: "hiddenInset",
+          trafficLightPosition: { x: 14, y: 16 },
+        }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -297,6 +347,33 @@ app.whenReady().then(async () => {
     try {
       await fs.writeFile(path.join(localScriptsDir, filename), code, "utf8");
       return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle("rename-local-script", async (e, filename, newName) => {
+    try {
+      const oldFilename = assertLocalScriptFilename(filename);
+      const nextFilename = localScriptFilenameFromInput(newName);
+      if (oldFilename === nextFilename) {
+        return { success: true, data: { filename: nextFilename } };
+      }
+
+      const oldPath = path.join(localScriptsDir, oldFilename);
+      const nextPath = path.join(localScriptsDir, nextFilename);
+
+      try {
+        await fs.access(nextPath);
+        return {
+          success: false,
+          error: `A script named ${nextFilename} already exists.`,
+        };
+      } catch {}
+
+      await fs.rename(oldPath, nextPath);
+      win.webContents.send("local-scripts-changed");
+      return { success: true, data: { filename: nextFilename } };
     } catch (err) {
       return { success: false, error: err.message };
     }
@@ -475,15 +552,25 @@ app.whenReady().then(async () => {
     try {
       const config = await getConfig();
       let allScripts = [];
+      let communityOrder = 0;
 
       for (const url of config.repositories) {
         try {
           const response = await fetch(url);
           if (response.ok) {
             const registry = await response.json();
-            const scriptsWithSource = (registry.scripts || []).map(
-              (script) => ({ ...script, _source: url }),
-            );
+            const scriptsWithSource = (registry.scripts || []).map((script) => ({
+              ...script,
+              _source: url,
+              _imageUrl: resolveCommunityAssetUrl(
+                url,
+                script.image ||
+                  script.image_url ||
+                  script.preview_image ||
+                  script.screenshot,
+              ),
+              _communityOrder: communityOrder++,
+            }));
             allScripts = allScripts.concat(scriptsWithSource);
           }
         } catch (err) {
@@ -491,6 +578,62 @@ app.whenReady().then(async () => {
         }
       }
       return { success: true, data: allScripts };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("get-community-favorites", async () => {
+    try {
+      const config = await getConfig();
+      return { success: true, data: config.favoriteCommunityScripts };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("toggle-community-favorite", async (event, favorite) => {
+    try {
+      if (!favorite || !favorite.repo || !favorite.id) {
+        return { success: false, error: "Missing favorite repo or id." };
+      }
+
+      const config = await getConfig();
+      const index = config.favoriteCommunityScripts.findIndex(
+        (item) => item.repo === favorite.repo && item.id === favorite.id,
+      );
+
+      if (index >= 0) {
+        config.favoriteCommunityScripts.splice(index, 1);
+      } else {
+        config.favoriteCommunityScripts.push({
+          repo: favorite.repo,
+          id: favorite.id,
+        });
+      }
+
+      await saveConfig(config);
+      return { success: true, data: config.favoriteCommunityScripts };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("get-sidebar-collapsed", async () => {
+    try {
+      const config = await getConfig();
+      return { success: true, data: config.sidebarCollapsed };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("set-sidebar-collapsed", async (event, collapsed) => {
+    try {
+      const config = await getConfig();
+      config.sidebarCollapsed = Boolean(collapsed);
+      await saveConfig(config);
+      return { success: true, data: config.sidebarCollapsed };
     } catch (error) {
       return { success: false, error: error.message };
     }
