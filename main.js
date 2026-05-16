@@ -43,6 +43,97 @@ function parseCsvTextContent(result) {
   ];
 }
 
+function resolveCommunityAssetUrl(registryUrl, assetUrl) {
+  if (!assetUrl) return "";
+  try {
+    return new URL(assetUrl, registryUrl).toString();
+  } catch {
+    return assetUrl;
+  }
+}
+
+function assertLocalScriptFilename(filename) {
+  if (!filename || typeof filename !== "string") {
+    throw new Error("Missing script filename.");
+  }
+  if (path.basename(filename) !== filename || path.extname(filename) !== ".js") {
+    throw new Error("Invalid script filename.");
+  }
+  return filename;
+}
+
+function localScriptFilenameFromInput(input) {
+  const base = String(input || "")
+    .trim()
+    .replace(/\.js$/i, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  if (!base) throw new Error("Please enter a valid script name.");
+  return `${base}.js`;
+}
+
+function readMetadataField(header, field) {
+  const re = new RegExp(`^\\s*\\*?\\s*${field}:\\s*(.*)$`, "im");
+  const match = header.match(re);
+  return match ? match[1].trim() : "";
+}
+
+function parseScriptMetadata(code, fallbackName = "") {
+  const meta = {
+    name: fallbackName,
+    description: "",
+    version: "",
+    author: "",
+  };
+  const headerMatch = String(code || "").match(/^\s*\/\*\*([\s\S]*?)\*\//);
+  if (!headerMatch) return meta;
+
+  const header = headerMatch[1];
+  meta.name = readMetadataField(header, "name") || meta.name;
+  meta.description = readMetadataField(header, "description");
+  meta.version = readMetadataField(header, "version");
+  meta.author = readMetadataField(header, "author");
+  return meta;
+}
+
+function metadataValue(value) {
+  return String(value || "").replace(/\s*\n+\s*/g, " ").trim();
+}
+
+function upsertMetadataHeader(code, metadata) {
+  const fields = {
+    name: metadataValue(metadata.name),
+    description: metadataValue(metadata.description),
+    version: metadataValue(metadata.version),
+    author: metadataValue(metadata.author),
+  };
+  const presentFields = Object.entries(fields).filter(([, value]) => value);
+  if (presentFields.length === 0) return code;
+
+  const source = String(code || "");
+  const headerMatch = source.match(/^\s*\/\*\*([\s\S]*?)\*\//);
+  if (!headerMatch) {
+    const header =
+      "/**\n" +
+      presentFields.map(([key, value]) => ` * ${key}: ${value}`).join("\n") +
+      "\n */\n\n";
+    return header + source.replace(/^\s+/, "");
+  }
+
+  let header = headerMatch[1];
+  for (const [key, value] of presentFields) {
+    const re = new RegExp(`(^\\s*\\*?\\s*${key}:\\s*).*$`, "im");
+    if (re.test(header)) {
+      header = header.replace(re, (line, prefix) => `${prefix}${value}`);
+    } else {
+      header += `\n * ${key}: ${value}`;
+    }
+  }
+  return source.replace(headerMatch[0], `/**${header}*/`);
+}
+
 let mcpConnected = false;
 let mcpConnectPromise = null;
 
@@ -134,6 +225,19 @@ async function getConfig() {
     needsSave = true;
   }
 
+  if (
+    !config.favoriteCommunityScripts ||
+    !Array.isArray(config.favoriteCommunityScripts)
+  ) {
+    config.favoriteCommunityScripts = [];
+    needsSave = true;
+  }
+
+  if (typeof config.sidebarCollapsed !== "boolean") {
+    config.sidebarCollapsed = false;
+    needsSave = true;
+  }
+
   if (needsSave) await saveConfig(config);
   return config;
 }
@@ -167,9 +271,10 @@ async function startWatcher() {
         const stem = path.parse(filename).name.toLowerCase();
         if (titles.includes(stem)) {
           const code = await fs.readFile(full, "utf8");
+          const metadata = parseScriptMetadata(code, path.parse(filename).name);
           await callTool(client, "save_script_to_library", {
-            title: path.parse(filename).name,
-            description: "Updated via Script Manager watch mode",
+            title: metadata.name || path.parse(filename).name,
+            description: metadata.description,
             code,
           }).catch(() => {});
         }
@@ -222,6 +327,12 @@ app.whenReady().then(async () => {
     minWidth: 960,
     minHeight: 600,
     backgroundColor: "#1f1f1f",
+    ...(process.platform === "darwin"
+      ? {
+          titleBarStyle: "hiddenInset",
+          trafficLightPosition: { x: 14, y: 16 },
+        }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -241,27 +352,20 @@ app.whenReady().then(async () => {
       for (const file of files) {
         const full = path.join(localScriptsDir, file);
         const stat = await fs.stat(full);
-        let name = path.parse(file).name;
-        let description = "";
-        let version = "";
+        let metadata = {
+          name: path.parse(file).name,
+          description: "",
+          version: "",
+        };
         try {
           const head = (await fs.readFile(full, "utf8")).slice(0, 4096);
-          const m = head.match(/^\s*\/\*\*([\s\S]*?)\*\//);
-          if (m) {
-            const h = m[1];
-            const n = h.match(/name:\s*(.+)/i);
-            if (n) name = n[1].trim();
-            const d = h.match(/description:\s*(.+)/i);
-            if (d) description = d[1].trim();
-            const v = h.match(/version:\s*(.+)/i);
-            if (v) version = v[1].trim();
-          }
+          metadata = parseScriptMetadata(head, metadata.name);
         } catch {}
         out.push({
           file,
-          name,
-          description,
-          version,
+          name: metadata.name,
+          description: metadata.description,
+          version: metadata.version,
           size: stat.size,
           modified: stat.mtimeMs,
         });
@@ -302,6 +406,33 @@ app.whenReady().then(async () => {
     }
   });
 
+  ipcMain.handle("rename-local-script", async (e, filename, newName) => {
+    try {
+      const oldFilename = assertLocalScriptFilename(filename);
+      const nextFilename = localScriptFilenameFromInput(newName);
+      if (oldFilename === nextFilename) {
+        return { success: true, data: { filename: nextFilename } };
+      }
+
+      const oldPath = path.join(localScriptsDir, oldFilename);
+      const nextPath = path.join(localScriptsDir, nextFilename);
+
+      try {
+        await fs.access(nextPath);
+        return {
+          success: false,
+          error: `A script named ${nextFilename} already exists.`,
+        };
+      } catch {}
+
+      await fs.rename(oldPath, nextPath);
+      win.webContents.send("local-scripts-changed");
+      return { success: true, data: { filename: nextFilename } };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
   ipcMain.handle("select-file", async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog(win, {
       properties: ["openFile"],
@@ -313,25 +444,15 @@ app.whenReady().then(async () => {
     const code = await fs.readFile(filePaths[0], "utf8");
 
     // Výchozí hodnoty (pokud skript nemá hlavičku)
-    let parsedName = path.parse(filePaths[0]).name;
-    let parsedDesc = "";
-
-    // Pokusíme se najít hlavičku /** ... */ na začátku souboru
-    const headerMatch = code.match(/^\s*\/\*\*([\s\S]*?)\*\//);
-    if (headerMatch) {
-      const headerContent = headerMatch[1];
-
-      // Vytažení hodnot pomocí Regexu
-      const nameMatch = headerContent.match(/name:\s*(.+)/i);
-      const descMatch = headerContent.match(/description:\s*(.+)/i);
-
-      if (nameMatch) parsedName = nameMatch[1].trim();
-      if (descMatch) parsedDesc = descMatch[1].trim();
-    }
+    const metadata = parseScriptMetadata(code, path.parse(filePaths[0]).name);
 
     return {
       success: true,
-      data: { name: parsedName, description: parsedDesc, code },
+      data: {
+        name: metadata.name,
+        description: metadata.description,
+        code,
+      },
     };
   });
 
@@ -356,9 +477,10 @@ app.whenReady().then(async () => {
     try {
       const filePath = path.join(localScriptsDir, filename);
       const code = await fs.readFile(filePath, "utf8");
+      const metadata = parseScriptMetadata(code, path.parse(filename).name);
       await callTool(client, "save_script_to_library", {
-        title: path.parse(filename).name,
-        description: "Pushed from Local Library",
+        title: metadata.name || path.parse(filename).name,
+        description: metadata.description,
         code,
       });
       return { success: true };
@@ -382,9 +504,13 @@ app.whenReady().then(async () => {
     try {
       const safeFilename =
         title.toLowerCase().replace(/[^a-z0-9_-]/g, "-") + ".js";
+      const codeWithMetadata = upsertMetadataHeader(code, {
+        name: title,
+        description,
+      });
       await fs.writeFile(
         path.join(localScriptsDir, safeFilename),
-        code,
+        codeWithMetadata,
         "utf8",
       );
       return { success: true };
@@ -475,15 +601,25 @@ app.whenReady().then(async () => {
     try {
       const config = await getConfig();
       let allScripts = [];
+      let communityOrder = 0;
 
       for (const url of config.repositories) {
         try {
           const response = await fetch(url);
           if (response.ok) {
             const registry = await response.json();
-            const scriptsWithSource = (registry.scripts || []).map(
-              (script) => ({ ...script, _source: url }),
-            );
+            const scriptsWithSource = (registry.scripts || []).map((script) => ({
+              ...script,
+              _source: url,
+              _imageUrl: resolveCommunityAssetUrl(
+                url,
+                script.image ||
+                  script.image_url ||
+                  script.preview_image ||
+                  script.screenshot,
+              ),
+              _communityOrder: communityOrder++,
+            }));
             allScripts = allScripts.concat(scriptsWithSource);
           }
         } catch (err) {
@@ -496,24 +632,93 @@ app.whenReady().then(async () => {
     }
   });
 
+  ipcMain.handle("get-community-favorites", async () => {
+    try {
+      const config = await getConfig();
+      return { success: true, data: config.favoriteCommunityScripts };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("toggle-community-favorite", async (event, favorite) => {
+    try {
+      if (!favorite || !favorite.repo || !favorite.id) {
+        return { success: false, error: "Missing favorite repo or id." };
+      }
+
+      const config = await getConfig();
+      const index = config.favoriteCommunityScripts.findIndex(
+        (item) => item.repo === favorite.repo && item.id === favorite.id,
+      );
+
+      if (index >= 0) {
+        config.favoriteCommunityScripts.splice(index, 1);
+      } else {
+        config.favoriteCommunityScripts.push({
+          repo: favorite.repo,
+          id: favorite.id,
+        });
+      }
+
+      await saveConfig(config);
+      return { success: true, data: config.favoriteCommunityScripts };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("get-sidebar-collapsed", async () => {
+    try {
+      const config = await getConfig();
+      return { success: true, data: config.sidebarCollapsed };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("set-sidebar-collapsed", async (event, collapsed) => {
+    try {
+      const config = await getConfig();
+      config.sidebarCollapsed = Boolean(collapsed);
+      await saveConfig(config);
+      return { success: true, data: config.sidebarCollapsed };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
   ipcMain.handle(
     "download-community-script",
-    async (event, downloadUrl, filename) => {
+    async (event, downloadUrl, filename, metadata = {}) => {
       try {
         const response = await fetch(downloadUrl);
         if (!response.ok)
           throw new Error("Error downloading file from server.");
         const code = await response.text();
+        const downloadedMetadata = parseScriptMetadata(code, filename);
+        const finalMetadata = {
+          ...downloadedMetadata,
+          name: metadata.name || filename,
+          description: metadata.description || downloadedMetadata.description,
+          version: metadata.version || downloadedMetadata.version,
+          author: metadata.author || downloadedMetadata.author,
+        };
+        const codeWithMetadata = upsertMetadataHeader(code, finalMetadata);
         const safeName =
           filename.toLowerCase().replace(/[^a-z0-9_-]/g, "-") + ".js";
 
-        await fs.writeFile(path.join(localScriptsDir, safeName), code, "utf8");
+        await fs.writeFile(
+          path.join(localScriptsDir, safeName),
+          codeWithMetadata,
+          "utf8",
+        );
 
         try {
           await callTool(client, "save_script_to_library", {
-            title: filename,
-            description: "Installed from Community Scripts",
-            code,
+            title: finalMetadata.name || filename,
+            description: finalMetadata.description,
+            code: codeWithMetadata,
           });
         } catch (mcpErr) {}
 
@@ -528,15 +733,28 @@ app.whenReady().then(async () => {
   // next to Install on community cards, for users who want to inspect / edit before activating.
   ipcMain.handle(
     "save-community-script",
-    async (event, downloadUrl, filename) => {
+    async (event, downloadUrl, filename, metadata = {}) => {
       try {
         const response = await fetch(downloadUrl);
         if (!response.ok)
           throw new Error("Error downloading file from server.");
         const code = await response.text();
+        const downloadedMetadata = parseScriptMetadata(code, filename);
+        const finalMetadata = {
+          ...downloadedMetadata,
+          name: metadata.name || filename,
+          description: metadata.description || downloadedMetadata.description,
+          version: metadata.version || downloadedMetadata.version,
+          author: metadata.author || downloadedMetadata.author,
+        };
+        const codeWithMetadata = upsertMetadataHeader(code, finalMetadata);
         const safeName =
           filename.toLowerCase().replace(/[^a-z0-9_-]/g, "-") + ".js";
-        await fs.writeFile(path.join(localScriptsDir, safeName), code, "utf8");
+        await fs.writeFile(
+          path.join(localScriptsDir, safeName),
+          codeWithMetadata,
+          "utf8",
+        );
         return { success: true };
       } catch (error) {
         return { success: false, error: error.message };

@@ -3,11 +3,11 @@
 
 ## Features
 
-* **My Scripts:** Manage your local `.js` scripts. Files are safely stored in your system's native user data folder and displayed with name, description, size, and last-modified time.
+* **My Scripts:** Manage your local `.js` scripts. Files are safely stored in your system's native user data folder and displayed with name, description, size, and last-modified time. Rename local files directly from the actions menu.
 * **Installed Scripts:** See exactly which scripts are currently active inside Affinity via the local MCP bridge. Includes a live connection status, round-trip latency, and an event stream log. Download any bridge script back to your local library with a single click.
 * **Install to Affinity:** Each script in your local library has an install dot. Click it (or the whole row) to push the script into Affinity instantly. Active scripts show a green dot so you always know what's live.
 * **Watch Mode:** Always-on file watcher. When you save a script that is already installed in Affinity, the app automatically re-pushes it to the bridge — no manual step needed.
-* **Community Scripts:** Browse scripts from any GitHub-hosted registry. Filter by category, sort by name, and install directly to your local library and Affinity in one click. Save-only mode lets you inspect or edit a script before activating it.
+* **Community Scripts:** Browse scripts from any GitHub-hosted registry. Mark favorites, filter by category, sort by recently added, name, category, or author, and install directly to your local library and Affinity in one click. Save-only mode lets you inspect or edit a script before activating it.
 * **Fork & Edit:** In the Code Editor, pull any community script into your local library and open it for editing immediately.
 * **Built-in Code Editor:** Write new scripts from scratch or edit existing ones with a full Ace editor (JavaScript syntax highlighting, dark theme, `Cmd/Ctrl+S` to save). New scripts get a pre-filled metadata header template.
 * **In-App Documentation:** Fetch the Affinity SDK documentation directly from the MCP server and read it in a clean Markdown reader — no need to keep a browser tab open.
@@ -108,11 +108,14 @@ The app converts the URL to a raw `registry.json` link automatically and fetches
 {
   "scripts": [
     {
+      "id": "my-awesome-script",
       "name": "My Awesome Script",
       "description": "Does something amazing with layers.",
       "version": "1.0.0",
       "author": "Your Name",
+      "contributors": ["Contributor One", "Contributor Two"],
       "category": "Layers",
+      "image": "previews/my-awesome-script.webp",
       "download_url": "https://raw.githubusercontent.com/username/repo/main/my-script.js"
     }
   ]
@@ -120,6 +123,7 @@ The app converts the URL to a raw `registry.json` link automatically and fetches
 ```
 
 > Make sure `download_url` points to the **raw** version of your `.js` file.
+> The optional `image` can be a full URL or a path relative to `registry.json`; previews are shown in a fixed 16:9 frame.
 
 Once your `registry.json` is in place, anyone can paste your GitHub link into the app and install your scripts with a single click.
 

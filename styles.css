@@ -328,6 +328,22 @@ body {
     display: flex;
     flex-direction: column;
 }
+body.platform-darwin .app-frame {
+    position: relative;
+    padding-top: 48px;
+}
+body.platform-darwin .app-frame::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 48px;
+    z-index: 30;
+    background: var(--bg-chrome);
+    border-bottom: 1px solid var(--hair);
+    -webkit-app-region: drag;
+}
 .app-body {
     flex: 1;
     display: flex;
@@ -351,6 +367,20 @@ body {
     display: flex;
     align-items: flex-start;
     gap: 10px;
+}
+body.platform-darwin .brand-lockup {
+    min-height: 0;
+    padding: 18px 14px 14px;
+    -webkit-app-region: drag;
+}
+body.platform-darwin .brand-lockup button,
+body.platform-darwin .nav,
+body.platform-darwin .sidebar-footer,
+body.platform-darwin input,
+body.platform-darwin select,
+body.platform-darwin textarea,
+body.platform-darwin button {
+    -webkit-app-region: no-drag;
 }
 .brand-gh {
     margin-left: auto;
@@ -527,6 +557,11 @@ body {
     justify-content: center;
     padding: 14px 8px;
 }
+body.platform-darwin .sidebar.collapsed .brand-lockup {
+    justify-content: center;
+    min-height: 0;
+    padding: 14px 8px;
+}
 
 .btn-sidebar-toggle {
     margin-left: auto;
@@ -653,6 +688,11 @@ body {
     min-width: 0;
     background: var(--bg-app);
     overflow: auto;
+    position: relative;
+}
+.main::before {
+    content: "";
+    display: none;
 }
 .screen {
     padding: 32px 36px 36px;
@@ -896,6 +936,18 @@ body {
    Community screen
    ============================================================ */
 
+.community-sticky {
+    position: sticky;
+    top: 0;
+    z-index: 25;
+    background: var(--bg-app);
+    margin: -32px -36px 20px;
+    padding: 32px 36px 0;
+}
+body.platform-darwin .community-sticky {
+    top: 0;
+}
+
 .screen-header {
     display: flex;
     justify-content: space-between;
@@ -966,7 +1018,7 @@ body {
 .cat-tabs {
     display: flex;
     gap: 2px;
-    margin-bottom: 20px;
+    margin-bottom: 0;
     overflow-x: auto;
     padding-bottom: 1px;
     border-bottom: 1px solid var(--hair);
@@ -1020,6 +1072,7 @@ body {
     padding: 20px;
     display: flex;
     flex-direction: column;
+    cursor: pointer;
     transition:
         border-color 0.12s,
         background 0.12s;
@@ -1034,6 +1087,22 @@ body {
     align-items: flex-start;
     gap: 10px;
     margin-bottom: 4px;
+}
+.c-card .card-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+.c-card .c-favorite {
+    width: 26px;
+    height: 26px;
+}
+.c-card .c-favorite.active {
+    color: var(--warn);
+}
+.c-card .c-favorite.active svg path {
+    fill: currentColor;
 }
 .c-card h3 {
     font: 600 15px/1.25 var(--f-sans);
@@ -1079,6 +1148,80 @@ body {
 .c-card .install-btn.installed {
     background: var(--accent-dim);
     border-color: rgba(167, 241, 117, 0.25);
+    color: var(--accent);
+    cursor: default;
+}
+
+.community-detail-modal {
+    max-width: 720px;
+}
+.community-detail-body {
+    gap: 18px;
+}
+.community-detail-preview {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background:
+        linear-gradient(45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%),
+        var(--bg-card);
+    background-position:
+        0 0,
+        0 8px,
+        8px -8px,
+        -8px 0;
+    background-size: 16px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.community-detail-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+.community-detail-placeholder {
+    color: var(--text-faint);
+    font: 500 12px/1 var(--f-sans);
+}
+.community-detail-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.community-detail-body h2 {
+    margin: 0 0 6px;
+    color: var(--text-strong);
+    font: 600 22px/1.15 var(--f-sans);
+}
+.community-detail-author {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    color: var(--text-dim);
+    font: 400 12px/1.35 var(--f-sans);
+}
+.community-detail-separator {
+    color: var(--text-faint);
+}
+.community-detail-actions {
+    justify-content: space-between;
+}
+.community-detail-actions .gh-btn.active {
+    color: var(--warn);
+}
+.community-detail-actions .gh-btn.active svg path {
+    fill: currentColor;
+}
+.community-detail-actions .accent-btn.installed {
+    background: var(--accent-dim);
     color: var(--accent);
     cursor: default;
 }
@@ -1223,10 +1366,24 @@ body {
     justify-content: space-between;
     align-items: center;
 }
+.modal-head.compact {
+    padding: 10px 16px;
+}
+.modal-head.compact.icon-only {
+    min-height: 28px;
+    padding: 5px 10px;
+    justify-content: flex-end;
+}
 .modal-head h3 {
     font: 600 15px/1 var(--f-sans);
     color: var(--text-strong);
     margin: 0;
+}
+.modal-head.compact h3 {
+    font-size: 12px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 .modal-body {
     padding: 20px 22px;

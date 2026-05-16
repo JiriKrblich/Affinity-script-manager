@@ -10,3 +10,4 @@ Thumbs.db
 
 # internal design handoff material, not shipped upstream
 design_temp/
+.codex/environments/environment.toml
