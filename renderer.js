@@ -696,36 +696,39 @@ async function renderCommunity(root) {
   const screen = document.createElement("div");
   screen.className = "screen";
   screen.innerHTML = `
-    <div class="eyebrow">Discover</div>
-    <div class="screen-header">
-      <div>
-        <h1 style="margin-bottom:6px">Community Scripts</h1>
-        <p class="subhead" style="margin:0"><span id="c-count">—</span> scripts from <span id="c-repos">—</span> repositories</p>
+    <div class="community-sticky">
+      <div class="eyebrow">Discover</div>
+      <div class="screen-header">
+        <div>
+          <h1 style="margin-bottom:6px">Community Scripts</h1>
+          <p class="subhead" style="margin:0"><span id="c-count">—</span> scripts from <span id="c-repos">—</span> repositories</p>
+        </div>
+        <div class="actions">
+          <button class="gh-btn compact" id="btn-community-source"><span id="ico-src"></span> Source</button>
+          <button class="gh-btn compact" id="btn-community-settings"><span id="ico-gear"></span> Settings</button>
+          <button class="accent-btn compact" id="btn-community-submit"><span id="ico-plus"></span> Submit Script</button>
+        </div>
       </div>
-      <div class="actions">
-        <button class="gh-btn compact" id="btn-community-source"><span id="ico-src"></span> Source</button>
-        <button class="gh-btn compact" id="btn-community-settings"><span id="ico-gear"></span> Settings</button>
-        <button class="accent-btn compact" id="btn-community-submit"><span id="ico-plus"></span> Submit Script</button>
+
+      <div class="search-bar">
+        <div class="search-wrap">
+          <span id="c-search-icon"></span>
+          <input id="c-search" type="text" placeholder="Search scripts by name, author, description…" />
+          <span class="kbd">⌘K</span>
+        </div>
+        <div class="sort">
+          <select id="c-sort">
+            <option value="recent">Recently Added</option>
+            <option value="name">A — Z</option>
+            <option value="category">Category</option>
+            <option value="author">Author</option>
+          </select>
+        </div>
       </div>
+
+      <div class="cat-tabs" id="c-tabs"></div>
     </div>
 
-    <div class="search-bar">
-      <div class="search-wrap">
-        <span id="c-search-icon"></span>
-        <input id="c-search" type="text" placeholder="Search scripts by name, author, description…" />
-        <span class="kbd">⌘K</span>
-      </div>
-      <div class="sort">
-        <select id="c-sort">
-          <option value="recent">Recently Added</option>
-          <option value="name">A — Z</option>
-          <option value="category">Category</option>
-          <option value="author">Author</option>
-        </select>
-      </div>
-    </div>
-
-    <div class="cat-tabs" id="c-tabs"></div>
     <div class="community-grid" id="c-grid">
       <div style="grid-column: 1/-1; color: var(--text-faint); font-size: 12px; padding: 20px 0;"><span class="loading">Fetching community scripts</span></div>
     </div>

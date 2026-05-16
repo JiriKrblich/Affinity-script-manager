@@ -936,6 +936,18 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
    Community screen
    ============================================================ */
 
+.community-sticky {
+    position: sticky;
+    top: 0;
+    z-index: 25;
+    background: var(--bg-app);
+    margin: -32px -36px 20px;
+    padding: 32px 36px 0;
+}
+body.platform-darwin .community-sticky {
+    top: 0;
+}
+
 .screen-header {
     display: flex;
     justify-content: space-between;
@@ -1006,7 +1018,7 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
 .cat-tabs {
     display: flex;
     gap: 2px;
-    margin-bottom: 20px;
+    margin-bottom: 0;
     overflow-x: auto;
     padding-bottom: 1px;
     border-bottom: 1px solid var(--hair);
