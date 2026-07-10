@@ -696,7 +696,9 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
 }
 .screen {
     padding: 32px 36px 36px;
-    max-width: 1500px;
+    /* No width cap: the app fills the whole window (the community grid auto-fills
+       extra columns on wide displays). Text-heavy readers keep their own inner cap. */
+    width: 100%;
 }
 .screen h1 {
     font: 700 28px/1.2 var(--f-sans);
@@ -936,13 +938,19 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
    Community screen
    ============================================================ */
 
+.community-head {
+    margin-bottom: 20px;
+}
+/* Only the search bar + category tabs stay pinned; the header and the featured
+   carousel above scroll away with the page. Horizontal bleed keeps the pinned
+   background full-width so scrolled content doesn't peek beside it. */
 .community-sticky {
     position: sticky;
     top: 0;
     z-index: 25;
     background: var(--bg-app);
-    margin: -32px -36px 20px;
-    padding: 32px 36px 0;
+    margin: 0 -36px 20px;
+    padding: 16px 36px 0;
 }
 body.platform-darwin .community-sticky {
     top: 0;
@@ -1064,6 +1072,200 @@ body.platform-darwin .community-sticky {
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 14px;
 }
+
+/* ---------- Featured carousel (hero showcase above the search bar) ---------- */
+.community-carousel {
+    margin-bottom: 24px;
+}
+.community-carousel[hidden] {
+    display: none;
+}
+.cc-viewport {
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+}
+.cc-track {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+}
+.cc-track::-webkit-scrollbar {
+    display: none;
+}
+.cc-slide {
+    flex: 0 0 100%;
+    scroll-snap-align: start;
+    display: flex;
+    min-height: 250px;
+    background: var(--bg-chrome);
+    cursor: pointer;
+}
+.cc-media {
+    position: relative;
+    flex: 0 0 48%;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background:
+        linear-gradient(45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%),
+        var(--bg-card);
+    background-position:
+        0 0,
+        0 8px,
+        8px -8px,
+        -8px 0;
+    background-size: 16px 16px;
+}
+.cc-media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+/* Soft fade from the preview into the body so the split isn't a hard line. */
+.cc-media::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(90deg, transparent 62%, var(--bg-chrome));
+}
+.cc-media-ph {
+    color: var(--text-faint);
+    font: 500 12px/1 var(--f-sans);
+    position: relative;
+    z-index: 1;
+}
+.cc-body {
+    flex: 1;
+    min-width: 0;
+    padding: 28px 32px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 7px;
+}
+.cc-eyebrow {
+    font: 600 10px/1 var(--f-sans);
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: var(--accent);
+}
+.cc-body h3 {
+    margin: 0;
+    font: 700 22px/1.2 var(--f-sans);
+    color: var(--text-strong);
+    letter-spacing: -0.3px;
+}
+.cc-author {
+    font: 400 13px/1 var(--f-sans);
+    color: var(--text-dim);
+}
+.cc-desc {
+    margin: 4px 0 0;
+    font: 400 14px/1.6 var(--f-sans);
+    color: var(--text);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.cc-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+}
+.cc-install.installed {
+    background: var(--accent-dim);
+    color: var(--accent);
+    cursor: default;
+}
+.cc-arrow {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(0, 0, 0, 0.42);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: #fff;
+    cursor: pointer;
+    z-index: 2;
+    opacity: 0;
+    transition:
+        opacity 0.16s,
+        background 0.12s;
+}
+/* Arrows stay out of the way until the user hovers the carousel. */
+.cc-viewport:hover .cc-arrow:not([hidden]) {
+    opacity: 1;
+}
+.cc-arrow:hover {
+    background: rgba(0, 0, 0, 0.7);
+    color: #fff;
+}
+.cc-prev {
+    left: 14px;
+}
+.cc-next {
+    right: 14px;
+}
+.cc-arrow[hidden] {
+    display: none;
+}
+.cc-dots {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 14px;
+}
+.cc-dots[hidden] {
+    display: none;
+}
+.cc-dot {
+    width: 7px;
+    height: 7px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: var(--text-mute);
+    cursor: pointer;
+    transition:
+        background 0.16s,
+        width 0.16s;
+}
+.cc-dot:hover {
+    background: var(--text-faint);
+}
+.cc-dot.active {
+    width: 20px;
+    background: var(--accent);
+}
+@media (max-width: 720px) {
+    .cc-slide {
+        flex-direction: column;
+        min-height: 0;
+    }
+    .cc-media {
+        flex: none;
+        aspect-ratio: 16 / 9;
+    }
+}
 .c-card {
     position: relative;
     background: var(--bg-chrome);
@@ -1073,9 +1275,43 @@ body.platform-darwin .community-sticky {
     display: flex;
     flex-direction: column;
     cursor: pointer;
+    overflow: hidden;
     transition:
         border-color 0.12s,
         background 0.12s;
+}
+/* Full-bleed 16:9 thumbnail at the top of the card. Negative margins pull it out
+   to the card edges; the card's overflow:hidden clips it to the rounded corners. */
+.c-card .c-card-preview {
+    margin: -20px -20px 16px;
+    aspect-ratio: 16 / 9;
+    background:
+        linear-gradient(45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%),
+        var(--bg-card);
+    background-position:
+        0 0,
+        0 8px,
+        8px -8px,
+        -8px 0;
+    background-size: 16px 16px;
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.c-card .c-card-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.c-card .c-card-preview-ph {
+    color: var(--text-faint);
+    font: 500 11px/1 var(--f-sans);
 }
 .c-card:hover {
     border-color: var(--border-hi);
@@ -1092,6 +1328,20 @@ body.platform-darwin .community-sticky {
     display: inline-flex;
     align-items: center;
     gap: 4px;
+    flex-shrink: 0;
+}
+/* Featured pill — shown on cards and in the detail modal for repo-curated picks. */
+.c-featured-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 9px;
+    border-radius: var(--r-sm);
+    font: 600 10px/1 var(--f-sans);
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: var(--accent-dim);
+    border: 1px solid rgba(167, 241, 117, 0.25);
     flex-shrink: 0;
 }
 .c-card .c-favorite {
@@ -1119,6 +1369,12 @@ body.platform-darwin .community-sticky {
     color: var(--text);
     margin-bottom: 16px;
     flex: 1;
+    /* Truncate to 3 lines on the card; the full text lives in the detail modal. */
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
 }
 .c-card .foot {
     display: flex;
@@ -1153,14 +1409,39 @@ body.platform-darwin .community-sticky {
 }
 
 .community-detail-modal {
-    max-width: 720px;
+    position: relative;
+    max-width: 1040px;
+    max-height: calc(100vh - 32px);
 }
-.community-detail-body {
-    gap: 18px;
+/* Scroll region: preview + content scroll together while the footer stays pinned. */
+.community-detail-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+/* Floating close button over the hero preview. */
+.community-detail-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    z-index: 3;
+    width: 32px;
+    height: 32px;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+}
+.community-detail-close:hover {
+    background: rgba(0, 0, 0, 0.68);
+    color: #fff;
 }
 .community-detail-preview {
     width: 100%;
     aspect-ratio: 16 / 9;
+    flex-shrink: 0;
     background:
         linear-gradient(45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
         linear-gradient(-45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
@@ -1173,8 +1454,7 @@ body.platform-darwin .community-sticky {
         8px -8px,
         -8px 0;
     background-size: 16px 16px;
-    border: 1px solid var(--border);
-    border-radius: var(--r-md);
+    border-bottom: 1px solid var(--border);
     overflow: hidden;
     display: flex;
     align-items: center;
@@ -1188,17 +1468,25 @@ body.platform-darwin .community-sticky {
 }
 .community-detail-placeholder {
     color: var(--text-faint);
-    font: 500 12px/1 var(--f-sans);
+    font: 500 13px/1 var(--f-sans);
+}
+/* Text content below the hero. */
+.community-detail-content {
+    padding: 24px 28px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
 }
 .community-detail-meta {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
 }
-.community-detail-body h2 {
-    margin: 0 0 6px;
+.community-detail-content h2 {
+    margin: 2px 0 0;
     color: var(--text-strong);
-    font: 600 22px/1.15 var(--f-sans);
+    font: 600 24px/1.2 var(--f-sans);
+    letter-spacing: -0.3px;
 }
 .community-detail-author {
     display: flex;
@@ -1206,13 +1494,25 @@ body.platform-darwin .community-sticky {
     gap: 6px;
     align-items: center;
     color: var(--text-dim);
-    font: 400 12px/1.35 var(--f-sans);
+    font: 400 13px/1.4 var(--f-sans);
 }
 .community-detail-separator {
     color: var(--text-faint);
 }
+.community-detail-desc {
+    margin-top: 6px;
+    color: var(--text);
+    font: 400 14px/1.65 var(--f-sans);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.community-detail-desc-empty {
+    color: var(--text-faint);
+    font-style: italic;
+}
 .community-detail-actions {
     justify-content: space-between;
+    flex-shrink: 0;
 }
 .community-detail-actions .gh-btn.active {
     color: var(--warn);

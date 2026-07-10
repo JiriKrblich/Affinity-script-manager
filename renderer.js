@@ -706,7 +706,7 @@ async function renderCommunity(root) {
   const screen = document.createElement("div");
   screen.className = "screen";
   screen.innerHTML = `
-    <div class="community-sticky">
+    <div class="community-head">
       <div class="eyebrow">Discover</div>
       <div class="screen-header">
         <div>
@@ -719,7 +719,18 @@ async function renderCommunity(root) {
           <button class="accent-btn compact" id="btn-community-submit"><span id="ico-plus"></span> Submit Script</button>
         </div>
       </div>
+    </div>
 
+    <section class="community-carousel" id="c-featured" hidden>
+      <div class="cc-viewport">
+        <div class="cc-track" id="c-featured-track"></div>
+        <button class="cc-arrow cc-prev" id="cc-prev" title="Previous"></button>
+        <button class="cc-arrow cc-next" id="cc-next" title="Next"></button>
+      </div>
+      <div class="cc-dots" id="c-featured-dots"></div>
+    </section>
+
+    <div class="community-sticky">
       <div class="search-bar">
         <div class="search-wrap">
           <span id="c-search-icon"></span>
@@ -832,6 +843,151 @@ async function renderCommunity(root) {
   };
 
   const grid = screen.querySelector("#c-grid");
+  const carouselEl = screen.querySelector("#c-featured");
+  const carouselTrack = screen.querySelector("#c-featured-track");
+  const carouselDots = screen.querySelector("#c-featured-dots");
+  const carouselPrev = screen.querySelector("#cc-prev");
+  const carouselNext = screen.querySelector("#cc-next");
+  carouselPrev.appendChild(Ico("chevronL", { size: 18, sw: 1.8 }));
+  carouselNext.appendChild(Ico("chevronR", { size: 18, sw: 1.8 }));
+
+  let carouselTimer = null;
+  let carouselIndex = 0;
+  let carouselCount = 0;
+
+  function goToSlide(i, smooth = true) {
+    if (carouselCount === 0) return;
+    carouselIndex = (i + carouselCount) % carouselCount;
+    carouselTrack.scrollTo({
+      left: carouselIndex * carouselTrack.clientWidth,
+      behavior: smooth ? "smooth" : "auto",
+    });
+    updateDots();
+  }
+
+  function updateDots() {
+    const dots = carouselDots.children;
+    for (let i = 0; i < dots.length; i++) {
+      dots[i].classList.toggle("active", i === carouselIndex);
+    }
+  }
+
+  function stopCarouselAutoplay() {
+    if (carouselTimer) {
+      clearInterval(carouselTimer);
+      carouselTimer = null;
+    }
+  }
+
+  function startCarouselAutoplay() {
+    stopCarouselAutoplay();
+    if (carouselCount < 2) return;
+    carouselTimer = setInterval(() => goToSlide(carouselIndex + 1), 6000);
+  }
+
+  // Featured carousel: shown only in the default "All" view with no active
+  // search, so it promotes curated picks without cluttering filtered results.
+  function paintFeaturedRail() {
+    const show =
+      state.communityFilter === "all" && !state.communityQuery.trim();
+    const featured = show ? scripts.filter((s) => s._featured) : [];
+    stopCarouselAutoplay();
+    carouselTrack.innerHTML = "";
+    carouselDots.innerHTML = "";
+    carouselIndex = 0;
+    carouselCount = featured.length;
+
+    if (!featured.length) {
+      carouselEl.hidden = true;
+      return;
+    }
+    carouselEl.hidden = false;
+    featured.forEach((s, i) => {
+      carouselTrack.appendChild(buildFeaturedSlide(s));
+      const dot = document.createElement("button");
+      dot.className = "cc-dot" + (i === 0 ? " active" : "");
+      dot.title = `Go to featured ${i + 1}`;
+      dot.onclick = () => {
+        goToSlide(i);
+        startCarouselAutoplay();
+      };
+      carouselDots.appendChild(dot);
+    });
+
+    const single = featured.length < 2;
+    carouselDots.hidden = single;
+    carouselPrev.hidden = single;
+    carouselNext.hidden = single;
+    startCarouselAutoplay();
+  }
+
+  function buildFeaturedSlide(s) {
+    const slide = document.createElement("div");
+    slide.className = "cc-slide";
+    const imageUrl = communityPreviewUrl(s);
+    const installed = state.installedIds.has(s.download_url);
+    slide.innerHTML = `
+      <div class="cc-media">
+        ${
+          imageUrl
+            ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(s.name || "Featured script preview")}">`
+            : `<div class="cc-media-ph">No preview image</div>`
+        }
+      </div>
+      <div class="cc-body">
+        <div class="cc-eyebrow">Featured</div>
+        <h3>${escapeHtml(s.name || "(untitled)")}</h3>
+        <div class="cc-author">by ${escapeHtml(s.author || "community")}</div>
+        <p class="cc-desc">${escapeHtml(s.description || "")}</p>
+        <div class="cc-actions">
+          <button class="accent-btn compact cc-install${installed ? " installed" : ""}">${installed ? "✓ Installed" : "Install"}</button>
+          <button class="gh-btn compact cc-details">Details</button>
+        </div>
+      </div>`;
+
+    const media = slide.querySelector(".cc-media img");
+    if (media) {
+      media.onerror = () => {
+        const ph = document.createElement("div");
+        ph.className = "cc-media-ph";
+        ph.textContent = "Preview unavailable";
+        media.replaceWith(ph);
+      };
+    }
+
+    const installBtn = slide.querySelector(".cc-install");
+    installBtn.onclick = (e) => {
+      e.stopPropagation();
+      installCommunityScript(s, installBtn);
+    };
+    slide.querySelector(".cc-details").onclick = (e) => {
+      e.stopPropagation();
+      openCommunityDetailModal(s);
+    };
+    slide.onclick = () => openCommunityDetailModal(s);
+    return slide;
+  }
+
+  carouselPrev.onclick = () => {
+    goToSlide(carouselIndex - 1);
+    startCarouselAutoplay();
+  };
+  carouselNext.onclick = () => {
+    goToSlide(carouselIndex + 1);
+    startCarouselAutoplay();
+  };
+  carouselEl.onmouseenter = stopCarouselAutoplay;
+  carouselEl.onmouseleave = startCarouselAutoplay;
+  // Keep the active dot in sync when the user swipes/scrolls the track manually.
+  let carouselScrollRaf = null;
+  carouselTrack.onscroll = () => {
+    if (carouselScrollRaf) cancelAnimationFrame(carouselScrollRaf);
+    carouselScrollRaf = requestAnimationFrame(() => {
+      const w = carouselTrack.clientWidth || 1;
+      carouselIndex = Math.round(carouselTrack.scrollLeft / w);
+      updateDots();
+    });
+  };
 
   function applyFavoritesResponse(response) {
     state.favoriteCommunityIds = new Set(
@@ -910,10 +1066,8 @@ async function renderCommunity(root) {
     const isInstalled = state.installedIds.has(script.download_url);
     bd.innerHTML = `
       <div class="modal community-detail-modal">
-        <div class="modal-head compact icon-only">
-          <button class="icon-btn" id="m-close"></button>
-        </div>
-        <div class="modal-body community-detail-body">
+        <button class="icon-btn community-detail-close" id="m-close" title="Close"></button>
+        <div class="community-detail-scroll">
           <div class="community-detail-preview">
             ${
               imageUrl
@@ -921,7 +1075,12 @@ async function renderCommunity(root) {
                 : `<div class="community-detail-placeholder">No preview image</div>`
             }
           </div>
-          <div>
+          <div class="community-detail-content">
+            <div class="community-detail-meta">
+              ${script._featured ? `<span class="c-featured-badge">Featured</span>` : ""}
+              <span class="tag">v${escapeHtml(script.version || "1.0.0")}</span>
+              <span class="tag">${escapeHtml((script.category || "other").toLowerCase())}</span>
+            </div>
             <h2>${escapeHtml(script.name || "(untitled)")}</h2>
             <div class="community-detail-author">
               <span>by ${escapeHtml(script.author || "community")}</span>
@@ -931,12 +1090,12 @@ async function renderCommunity(root) {
                   : ""
               }
             </div>
+            <div class="community-detail-desc">${
+              script.description
+                ? escapeHtml(script.description)
+                : `<span class="community-detail-desc-empty">No description provided.</span>`
+            }</div>
           </div>
-          <div class="community-detail-meta">
-            <span class="tag">v${escapeHtml(script.version || "1.0.0")}</span>
-            <span class="tag">${escapeHtml((script.category || "other").toLowerCase())}</span>
-          </div>
-          <p>${escapeHtml(script.description || "")}</p>
         </div>
         <div class="modal-foot community-detail-actions">
           <button class="gh-btn" id="m-favorite"></button>
@@ -1001,6 +1160,7 @@ async function renderCommunity(root) {
   }
 
   function paint() {
+    paintFeaturedRail();
     const q = state.communityQuery.toLowerCase();
     let filtered = scripts.filter((s) => {
       const favoriteKey = communityFavoriteKey(s);
@@ -1041,22 +1201,34 @@ async function renderCommunity(root) {
         ? `No scripts match "${q}".`
         : state.communityFilter === "__favorites"
           ? "No favorite scripts yet."
-        : "No scripts in this category.";
+          : "No scripts in this category.";
       grid.appendChild(empty);
       return;
     }
 
-    filtered.forEach((s) => {
+    filtered.forEach((s) => grid.appendChild(buildCommunityCard(s)));
+  }
+
+  function buildCommunityCard(s) {
       const installed = state.installedIds.has(s.download_url);
       const favoriteKey = communityFavoriteKey(s);
       const isFavorite = state.favoriteCommunityIds.has(favoriteKey);
       const card = document.createElement("div");
       card.className = "c-card";
+      const imageUrl = communityPreviewUrl(s);
       const cardHtml = [];
+      if (imageUrl) {
+        cardHtml.push(`
+          <div class="c-card-preview">
+            <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(s.name || "Community script preview")}" loading="lazy">
+          </div>
+        `);
+      }
       cardHtml.push(`
         <div class="top-row">
           <h3>${escapeHtml(s.name || "(untitled)")}</h3>
           <div class="card-actions">
+            ${s._featured ? `<span class="c-featured-badge">Featured</span>` : ""}
             <span class="tag">v${escapeHtml(s.version || "1.0.0")}</span>
             <button class="icon-btn c-favorite${isFavorite ? " active" : ""}" title="${isFavorite ? "Remove from favorites" : "Add to favorites"}"></button>
           </div>
@@ -1072,6 +1244,16 @@ async function renderCommunity(root) {
         </div>
       `);
       card.innerHTML = cardHtml.join("");
+
+      const previewImg = card.querySelector(".c-card-preview img");
+      if (previewImg) {
+        previewImg.onerror = () => {
+          const ph = document.createElement("div");
+          ph.className = "c-card-preview-ph";
+          ph.textContent = "Preview unavailable";
+          previewImg.replaceWith(ph);
+        };
+      }
 
       const favoriteBtn = card.querySelector(".c-favorite");
       favoriteBtn.appendChild(Ico("star", { size: 14, sw: 1.35 }));
@@ -1101,8 +1283,7 @@ async function renderCommunity(root) {
         await installCommunityScript(s, btn);
       };
       card.onclick = () => openCommunityDetailModal(s);
-      grid.appendChild(card);
-    });
+      return card;
   }
 
   renderTabs();

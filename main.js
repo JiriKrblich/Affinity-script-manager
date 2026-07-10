@@ -8,6 +8,8 @@ const {
 const { CallToolResultSchema } = require("@modelcontextprotocol/sdk/types.js");
 
 const SERVER_URL = "http://localhost:6767/sse";
+// TEMP: seed featured items when no featured.json exists yet, for visual testing.
+const DEBUG_SEED_FEATURED = true;
 const DEFAULT_REPO =
   "https://raw.githubusercontent.com/JiriKrblich/Affinity-Community-Scripts/refs/heads/main/registry.json";
 
@@ -49,6 +51,52 @@ function resolveCommunityAssetUrl(registryUrl, assetUrl) {
     return new URL(assetUrl, registryUrl).toString();
   } catch {
     return assetUrl;
+  }
+}
+
+// Resolve a file sitting next to registry.json in the same repo folder, e.g.
+// ".../main/registry.json" + "featured.json" -> ".../main/featured.json".
+function deriveRepoFileUrl(registryUrl, filename) {
+  try {
+    return new URL(filename, registryUrl).toString();
+  } catch {
+    return "";
+  }
+}
+
+// Normalize the many shapes a featured.json may take into a Set of script ids:
+//   ["id1", "id2"]
+//   { "featured": ["id1", "id2"] }
+//   { "featured": [{ "id": "id1" }, ...] }
+function parseFeaturedIds(data) {
+  const list = Array.isArray(data)
+    ? data
+    : data && Array.isArray(data.featured)
+      ? data.featured
+      : [];
+  const ids = new Set();
+  for (const entry of list) {
+    if (typeof entry === "string") {
+      ids.add(entry.trim());
+    } else if (entry && typeof entry === "object" && entry.id) {
+      ids.add(String(entry.id).trim());
+    }
+  }
+  ids.delete("");
+  return ids;
+}
+
+// Best-effort fetch of a repo's featured.json. Missing/invalid file is not an
+// error — featured is an optional, additive layer on top of registry.json.
+async function fetchFeaturedIds(registryUrl) {
+  const featuredUrl = deriveRepoFileUrl(registryUrl, "featured.json");
+  if (!featuredUrl) return new Set();
+  try {
+    const res = await fetch(featuredUrl);
+    if (!res.ok) return new Set();
+    return parseFeaturedIds(await res.json());
+  } catch {
+    return new Set();
   }
 }
 
@@ -608,9 +656,13 @@ app.whenReady().then(async () => {
           const response = await fetch(url);
           if (response.ok) {
             const registry = await response.json();
+            // Featured is an optional sibling file; fetch it in parallel-safe,
+            // non-fatal fashion so a repo without featured.json still works.
+            const featuredIds = await fetchFeaturedIds(url);
             const scriptsWithSource = (registry.scripts || []).map((script) => ({
               ...script,
               _source: url,
+              _featured: featuredIds.has(script.id),
               _imageUrl: resolveCommunityAssetUrl(
                 url,
                 script.image ||
@@ -625,6 +677,13 @@ app.whenReady().then(async () => {
         } catch (err) {
           console.warn(`Failed to fetch repo: ${url}`);
         }
+      }
+      // TEMP: seed a few featured items so the carousel is visible while there is
+      // no featured.json in the repos yet. Remove before shipping.
+      if (DEBUG_SEED_FEATURED && !allScripts.some((s) => s._featured)) {
+        allScripts.slice(0, 3).forEach((s) => {
+          s._featured = true;
+        });
       }
       return { success: true, data: allScripts };
     } catch (error) {
