@@ -275,11 +275,6 @@ body {
     box-shadow: 0 0 0 3px var(--accent-glow);
     cursor: default;
 }
-/* Hovering anywhere on the row previews the install action: a paused dot previews green */
-.table-row:not(.header):hover .install-dot:not(.on):not(:disabled) {
-    background: var(--accent);
-    box-shadow: 0 0 0 3px var(--accent-glow);
-}
 .install-dot:not(.on):not(:disabled):active {
     transform: scale(0.92);
 }
@@ -629,56 +624,10 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
     opacity: 1;
 }
 
-/* Drag-and-drop zone above Add Script button */
-.sb-drop {
-    border: 1.5px dashed var(--border-hi);
-    border-radius: var(--r-md);
-    padding: 14px 10px;
-    text-align: center;
-    color: var(--text-dim);
-    transition:
-        background 0.12s,
-        border-color 0.12s,
-        color 0.12s;
-    user-select: none;
-}
-.sb-drop:hover {
-    border-color: var(--text-faint);
-    color: var(--text);
-}
-.sb-drop .drop-ico {
-    display: inline-block;
-    margin-bottom: 6px;
-    color: var(--text-faint);
-    transition: color 0.12s;
-}
-.sb-drop .drop-title {
-    font: 600 12px/1.3 var(--f-sans);
-    color: var(--text);
-}
-.sb-drop .drop-dot-js {
+/* Accent ".js" highlight used in the drag overlay title. */
+.drop-dot-js {
     color: var(--accent);
     font-weight: 600;
-}
-.sb-drop .drop-sub {
-    font: 400 10px/1.3 var(--f-sans);
-    color: var(--text-faint);
-    margin-top: 3px;
-}
-.sb-drop.dragover {
-    background: var(--accent-dim);
-    border-color: var(--accent);
-    border-style: solid;
-    color: var(--accent);
-}
-.sb-drop.dragover .drop-ico {
-    color: var(--accent);
-}
-.sb-drop.dragover .drop-title {
-    color: var(--accent);
-}
-.sb-drop.dragover .drop-sub {
-    color: rgba(167, 241, 117, 0.7);
 }
 
 /* ---------- Main content ---------- */
@@ -727,6 +676,122 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
     font: 400 13px/1 var(--f-sans);
     color: var(--text);
     margin-bottom: 16px;
+}
+
+/* ---------- Update explanation modal ---------- */
+.update-illustration {
+    width: 100%;
+    height: auto;
+    display: block;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+}
+.update-ver-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font: 600 15px/1 var(--f-sans);
+}
+.update-note {
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-border);
+    border-radius: var(--r-md);
+    padding: 12px 14px;
+}
+.update-note-title {
+    font: 600 12px/1.3 var(--f-sans);
+    color: var(--warn);
+    margin-bottom: 4px;
+}
+.update-note p {
+    margin: 0;
+    color: var(--text) !important;
+}
+
+/* ---------- Updates-available panel (top of My Scripts) ---------- */
+.updates-panel {
+    margin-bottom: 16px;
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-border);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+}
+.updates-panel[hidden] {
+    display: none;
+}
+.updates-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--warn-border);
+}
+.updates-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font: 600 13px/1 var(--f-sans);
+    color: var(--warn);
+}
+.updates-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 10px;
+    background: var(--warn);
+    color: #1c1204;
+    font: 700 11px/1 var(--f-sans);
+}
+.updates-list {
+    display: flex;
+    flex-direction: column;
+}
+.updates-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border-top: 1px solid var(--hair);
+}
+.updates-row:first-child {
+    border-top: none;
+}
+.updates-name {
+    flex: 1;
+    min-width: 0;
+    font: 500 13px/1.3 var(--f-sans);
+    color: var(--text-strong);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.updates-name .row-ext {
+    color: var(--text-faint);
+}
+.updates-ver {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font: 500 12px/1 var(--f-sans);
+    flex-shrink: 0;
+}
+.updates-ver-old {
+    color: var(--text-faint);
+    text-decoration: line-through;
+}
+.updates-ver-arrow {
+    color: var(--text-faint);
+}
+.updates-ver-new {
+    color: var(--warn);
+    font-weight: 600;
+}
+.updates-btn {
+    flex-shrink: 0;
 }
 .status-bar .left {
     display: flex;
@@ -1073,9 +1138,66 @@ body.platform-darwin .community-sticky {
     gap: 14px;
 }
 
-/* ---------- Featured carousel (hero showcase above the search bar) ---------- */
+/* ---------- Community load errors ---------- */
+.community-errors {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+.community-errors[hidden] {
+    display: none;
+}
+.community-error {
+    display: flex;
+    gap: 12px;
+    padding: 14px 16px;
+    background: var(--danger-bg);
+    border: 1px solid var(--danger-border);
+    border-radius: var(--r-lg);
+}
+.community-error-ico {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--danger);
+    color: #fff;
+    font: 700 14px/22px var(--f-sans);
+    text-align: center;
+}
+.community-error-text {
+    min-width: 0;
+}
+.community-error-title {
+    font: 600 13px/1.3 var(--f-sans);
+    color: var(--danger-text);
+    margin-bottom: 3px;
+}
+.community-error-body {
+    font: 400 13px/1.5 var(--f-sans);
+    color: var(--text);
+}
+.community-error-url {
+    margin-top: 8px;
+    font: 400 11px/1.4 var(--f-sans);
+    color: var(--text-dim);
+    word-break: break-all;
+}
+.community-error-detail {
+    margin-top: 4px;
+    padding: 6px 8px;
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: var(--r-sm);
+    font: 400 11px/1.45 var(--f-sans);
+    color: var(--text-faint);
+    word-break: break-word;
+}
+
+/* ---------- Featured carousel (first full-width row inside the grid) ---------- */
 .community-carousel {
-    margin-bottom: 24px;
+    grid-column: 1 / -1;
+    margin-bottom: 6px;
 }
 .community-carousel[hidden] {
     display: none;
@@ -1408,10 +1530,12 @@ body.platform-darwin .community-sticky {
     cursor: default;
 }
 
-.community-detail-modal {
+/* .modal.community-detail-modal (two classes) so this wins over the later,
+   equal-specificity `.modal { max-width: 460px }` rule regardless of order. */
+.modal.community-detail-modal {
     position: relative;
-    max-width: 1040px;
-    max-height: calc(100vh - 32px);
+    max-width: 700px;
+    max-height: calc(100vh - 24px);
 }
 /* Scroll region: preview + content scroll together while the footer stays pinned. */
 .community-detail-scroll {
@@ -1638,6 +1762,51 @@ body.platform-darwin .community-sticky {
    Modals
    ============================================================ */
 
+/* Full-window drag overlay shown while dragging .js files over the window. */
+.drag-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    background: rgba(15, 16, 20, 0.72);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+.drag-overlay[hidden] {
+    display: none;
+}
+.drag-overlay-inner {
+    pointer-events: none;
+    width: 100%;
+    height: 100%;
+    max-width: 680px;
+    max-height: 420px;
+    border: 2px dashed var(--accent);
+    border-radius: var(--r-xl);
+    background: var(--accent-dim);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    text-align: center;
+}
+.drag-overlay-ico {
+    color: var(--accent);
+    margin-bottom: 6px;
+}
+.drag-overlay-title {
+    font: 700 21px/1.2 var(--f-sans);
+    color: var(--text-strong);
+}
+.drag-overlay-sub {
+    font: 400 13px/1.4 var(--f-sans);
+    color: var(--text-dim);
+}
+
 .modal-backdrop {
     position: fixed;
     inset: 0;
@@ -1858,9 +2027,6 @@ body.platform-darwin .community-sticky {
     border-top: 1px solid var(--hair);
     cursor: pointer;
     transition: background 0.1s;
-}
-.dev-row.community {
-    grid-template-columns: 20px minmax(220px, 1fr) 130px;
 }
 .dev-row:first-child {
     border-top: none;

@@ -9,7 +9,7 @@ const { CallToolResultSchema } = require("@modelcontextprotocol/sdk/types.js");
 
 const SERVER_URL = "http://localhost:6767/sse";
 // TEMP: seed featured items when no featured.json exists yet, for visual testing.
-const DEBUG_SEED_FEATURED = true;
+const DEBUG_SEED_FEATURED = false;
 const DEFAULT_REPO =
   "https://raw.githubusercontent.com/JiriKrblich/Affinity-Community-Scripts/refs/heads/main/registry.json";
 
@@ -43,6 +43,25 @@ function parseCsvTextContent(result) {
         .filter(Boolean),
     ),
   ];
+}
+
+// GitHub's raw CDN (raw.githubusercontent.com) caches files for ~5 minutes, so a
+// freshly pushed registry.json / script can otherwise look stale when the app is
+// reopened. Bust the edge cache with a unique query param + no-cache headers so we
+// always pull the latest. Callers keep the clean URL for anything else (asset
+// resolution, _source), passing it here only at the fetch call site.
+function fetchFresh(url, options = {}) {
+  const sep = url.includes("?") ? "&" : "?";
+  const bustedUrl = `${url}${sep}_cb=${Date.now()}`;
+  return fetch(bustedUrl, {
+    cache: "no-store",
+    ...options,
+    headers: {
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
+      ...(options.headers || {}),
+    },
+  });
 }
 
 function resolveCommunityAssetUrl(registryUrl, assetUrl) {
@@ -92,7 +111,7 @@ async function fetchFeaturedIds(registryUrl) {
   const featuredUrl = deriveRepoFileUrl(registryUrl, "featured.json");
   if (!featuredUrl) return new Set();
   try {
-    const res = await fetch(featuredUrl);
+    const res = await fetchFresh(featuredUrl);
     if (!res.ok) return new Set();
     return parseFeaturedIds(await res.json());
   } catch {
@@ -546,8 +565,9 @@ app.whenReady().then(async () => {
     }
   });
 
-  // "Add Script" — writes to disk only. Does NOT push to MCP: installation is an explicit
-  // action via the install dot on the My Scripts row.
+  // "Add Script" — saves to disk and auto-installs into Affinity via the bridge.
+  // The local save is authoritative; pushing to the bridge is best-effort so an
+  // offline bridge still saves the file (reported via `pushed`/`pushError`).
   ipcMain.handle("save-script", async (event, title, description, code) => {
     try {
       const safeFilename =
@@ -561,7 +581,20 @@ app.whenReady().then(async () => {
         codeWithMetadata,
         "utf8",
       );
-      return { success: true };
+
+      let pushed = false;
+      let pushError = null;
+      try {
+        await callTool(client, "save_script_to_library", {
+          title,
+          description,
+          code: codeWithMetadata,
+        });
+        pushed = true;
+      } catch (err) {
+        pushError = err && err.message ? err.message : String(err);
+      }
+      return { success: true, pushed, pushError };
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -650,33 +683,68 @@ app.whenReady().then(async () => {
       const config = await getConfig();
       let allScripts = [];
       let communityOrder = 0;
+      // Per-repo failures, distinguished by cause so the UI can explain *why*:
+      //   unreachable  — network/DNS/connection error (fetch threw)
+      //   unavailable  — reached the server but got a non-OK HTTP status (e.g. 404)
+      //   invalid-json — downloaded but the body is not valid JSON (bad syntax)
+      const repoErrors = [];
 
       for (const url of config.repositories) {
+        const isDefault = url === DEFAULT_REPO;
+
+        let response;
         try {
-          const response = await fetch(url);
-          if (response.ok) {
-            const registry = await response.json();
-            // Featured is an optional sibling file; fetch it in parallel-safe,
-            // non-fatal fashion so a repo without featured.json still works.
-            const featuredIds = await fetchFeaturedIds(url);
-            const scriptsWithSource = (registry.scripts || []).map((script) => ({
-              ...script,
-              _source: url,
-              _featured: featuredIds.has(script.id),
-              _imageUrl: resolveCommunityAssetUrl(
-                url,
-                script.image ||
-                  script.image_url ||
-                  script.preview_image ||
-                  script.screenshot,
-              ),
-              _communityOrder: communityOrder++,
-            }));
-            allScripts = allScripts.concat(scriptsWithSource);
-          }
+          response = await fetchFresh(url);
         } catch (err) {
-          console.warn(`Failed to fetch repo: ${url}`);
+          repoErrors.push({
+            url,
+            isDefault,
+            reason: "unreachable",
+            detail: err && err.message ? err.message : String(err),
+          });
+          continue;
         }
+
+        if (!response.ok) {
+          repoErrors.push({
+            url,
+            isDefault,
+            reason: "unavailable",
+            detail: `HTTP ${response.status}${response.statusText ? " " + response.statusText : ""}`,
+          });
+          continue;
+        }
+
+        let registry;
+        try {
+          registry = await response.json();
+        } catch (err) {
+          repoErrors.push({
+            url,
+            isDefault,
+            reason: "invalid-json",
+            detail: err && err.message ? err.message : String(err),
+          });
+          continue;
+        }
+
+        // Featured is an optional sibling file; fetch it in parallel-safe,
+        // non-fatal fashion so a repo without featured.json still works.
+        const featuredIds = await fetchFeaturedIds(url);
+        const scriptsWithSource = (registry.scripts || []).map((script) => ({
+          ...script,
+          _source: url,
+          _featured: featuredIds.has(script.id),
+          _imageUrl: resolveCommunityAssetUrl(
+            url,
+            script.image ||
+              script.image_url ||
+              script.preview_image ||
+              script.screenshot,
+          ),
+          _communityOrder: communityOrder++,
+        }));
+        allScripts = allScripts.concat(scriptsWithSource);
       }
       // TEMP: seed a few featured items so the carousel is visible while there is
       // no featured.json in the repos yet. Remove before shipping.
@@ -685,7 +753,7 @@ app.whenReady().then(async () => {
           s._featured = true;
         });
       }
-      return { success: true, data: allScripts };
+      return { success: true, data: allScripts, errors: repoErrors };
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -751,7 +819,7 @@ app.whenReady().then(async () => {
     "download-community-script",
     async (event, downloadUrl, filename, metadata = {}) => {
       try {
-        const response = await fetch(downloadUrl);
+        const response = await fetchFresh(downloadUrl);
         if (!response.ok)
           throw new Error("Error downloading file from server.");
         const code = await response.text();
@@ -794,7 +862,7 @@ app.whenReady().then(async () => {
     "save-community-script",
     async (event, downloadUrl, filename, metadata = {}) => {
       try {
-        const response = await fetch(downloadUrl);
+        const response = await fetchFresh(downloadUrl);
         if (!response.ok)
           throw new Error("Error downloading file from server.");
         const code = await response.text();
