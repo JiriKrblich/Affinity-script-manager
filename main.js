@@ -8,10 +8,10 @@ const {
 const { CallToolResultSchema } = require("@modelcontextprotocol/sdk/types.js");
 
 const SERVER_URL = "http://localhost:6767/sse";
-// TEMP: seed featured items when no featured.json exists yet, for visual testing.
-const DEBUG_SEED_FEATURED = false;
 const DEFAULT_REPO =
   "https://raw.githubusercontent.com/JiriKrblich/Affinity-Community-Scripts/refs/heads/main/registry.json";
+const COMMUNITY_ISSUES_URL =
+  "https://github.com/JiriKrblich/Affinity-Community-Scripts/issues/new";
 
 let client;
 let transport;
@@ -62,6 +62,27 @@ function fetchFresh(url, options = {}) {
       ...(options.headers || {}),
     },
   });
+}
+
+// Build a GitHub "new issue" URL whose body mirrors the community repo's
+// contribute-script template fields (Script Name / Author / Description /
+// Preview image / Version / Code), pre-filled from the script's metadata.
+function shareIssuePayload(code, nameHint) {
+  const meta = parseScriptMetadata(code, nameHint);
+  const name = meta.name || nameHint;
+  const title = `New script: ${name}`;
+  const body =
+    `**Script Name:** ${name}\n\n` +
+    `**Author:** ${meta.author || ""}\n\n` +
+    `**Description:** ${meta.description || ""}\n\n` +
+    `**Preview image:** _(drag and drop a 16:9 preview image here)_\n\n` +
+    `**Version:** ${meta.version || ""}\n\n` +
+    "**Code:**\n\n```js\n" +
+    code +
+    "\n```\n";
+  const baseUrl = `${COMMUNITY_ISSUES_URL}?title=${encodeURIComponent(title)}`;
+  const url = `${baseUrl}&body=${encodeURIComponent(body)}`;
+  return { url, baseUrl, body, tooLong: url.length > 7000 };
 }
 
 function resolveCommunityAssetUrl(registryUrl, assetUrl) {
@@ -620,6 +641,73 @@ app.whenReady().then(async () => {
     }
   });
 
+  // Build a pre-filled "contribute this script" GitHub issue for a local script.
+  // Auth + commit happen on github.com; the app never touches a token. Long
+  // scripts overflow the URL, so we also return the body for a clipboard fallback.
+  ipcMain.handle("build-share-issue", async (event, filename) => {
+    try {
+      assertLocalScriptFilename(filename);
+      const code = await fs.readFile(
+        path.join(localScriptsDir, filename),
+        "utf8",
+      );
+      return { success: true, ...shareIssuePayload(code, path.parse(filename).name) };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Same, but for a script that lives only in Affinity (Just in Affinity tab).
+  ipcMain.handle("build-share-issue-mcp", async (event, mcpTitle) => {
+    try {
+      const result = await callTool(client, "read_library_script", {
+        title: mcpTitle,
+      });
+      const code = getTextContent(result);
+      if (!code) return { success: false, error: "Empty script." };
+      return { success: true, ...shareIssuePayload(code, mcpTitle) };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Read a script from the Affinity library and return its parsed metadata
+  // (name/description/…). The bridge list only exposes titles, so this is how the
+  // "Just in Affinity" rows get a description.
+  ipcMain.handle("read-mcp-metadata", async (event, mcpTitle) => {
+    try {
+      const result = await callTool(client, "read_library_script", {
+        title: mcpTitle,
+      });
+      const code = getTextContent(result);
+      return { success: true, data: parseScriptMetadata(code, mcpTitle) };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Read a script from the Affinity library and save it to an arbitrary folder
+  // via the native save dialog (used by "Download to folder" for orphan scripts).
+  ipcMain.handle("export-mcp-to-disk", async (event, mcpTitle) => {
+    try {
+      const result = await callTool(client, "read_library_script", {
+        title: mcpTitle,
+      });
+      const code = getTextContent(result);
+      if (!code) return { success: false, error: "Empty script." };
+      const safeName =
+        String(mcpTitle).toLowerCase().replace(/[^a-z0-9_-]/g, "-") + ".js";
+      const { canceled, filePath } = await dialog.showSaveDialog(win, {
+        defaultPath: safeName,
+      });
+      if (canceled || !filePath) return { success: false, error: "Cancelled" };
+      await fs.writeFile(filePath, code, "utf8");
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
   // ==========================================
   // --- COMMUNITY SCRIPTS & SETTINGS ---
   // ==========================================
@@ -745,13 +833,6 @@ app.whenReady().then(async () => {
           _communityOrder: communityOrder++,
         }));
         allScripts = allScripts.concat(scriptsWithSource);
-      }
-      // TEMP: seed a few featured items so the carousel is visible while there is
-      // no featured.json in the repos yet. Remove before shipping.
-      if (DEBUG_SEED_FEATURED && !allScripts.some((s) => s._featured)) {
-        allScripts.slice(0, 3).forEach((s) => {
-          s._featured = true;
-        });
       }
       return { success: true, data: allScripts, errors: repoErrors };
     } catch (error) {

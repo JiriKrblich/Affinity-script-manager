@@ -15,6 +15,10 @@ contextBridge.exposeInMainWorld('api', {
   listMcpScripts: () => ipcRenderer.invoke('list-mcp-scripts'),
   saveScript: (title, description, code) => ipcRenderer.invoke('save-script', title, description, code),
   downloadFromMcp: (mcpTitle, localName) => ipcRenderer.invoke('download-from-mcp', mcpTitle, localName),
+  exportMcpToDisk: (mcpTitle) => ipcRenderer.invoke('export-mcp-to-disk', mcpTitle),
+  readMcpMetadata: (mcpTitle) => ipcRenderer.invoke('read-mcp-metadata', mcpTitle),
+  buildShareIssue: (filename) => ipcRenderer.invoke('build-share-issue', filename),
+  buildShareIssueMcp: (mcpTitle) => ipcRenderer.invoke('build-share-issue-mcp', mcpTitle),
 
   // --- Komunitní Marketplace ---
   listCommunityScripts: () => ipcRenderer.invoke('list-community-scripts'),

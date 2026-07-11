@@ -270,10 +270,18 @@ body {
     opacity: 0.4;
     cursor: default;
 }
+/* Single "active/glowing" style; colour comes from variables so a variant only
+   overrides the colour, never the glow itself. */
 .install-dot.on {
-    background: var(--accent);
-    box-shadow: 0 0 0 3px var(--accent-glow);
+    background: var(--dot-color, var(--accent));
+    box-shadow: 0 0 0 3px var(--dot-glow, var(--accent-glow));
     cursor: default;
+}
+/* Active in Affinity but not in the local library (Just in Affinity tab) —
+   same .install-dot.on glow, blue colour only. */
+.install-dot.affinity {
+    --dot-color: #4a9eff;
+    --dot-glow: rgba(74, 158, 255, 0.22);
 }
 .install-dot:not(.on):not(:disabled):active {
     transform: scale(0.92);
@@ -678,6 +686,56 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
     margin-bottom: 16px;
 }
 
+/* ---------- Share to community modal ---------- */
+.share-steps {
+    margin: 4px 0 0;
+    padding-left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    color: var(--text);
+    font: 400 13px/1.5 var(--f-sans);
+}
+.share-steps li {
+    padding-left: 4px;
+}
+.share-steps strong {
+    color: var(--text-strong);
+}
+.share-steps kbd,
+.share-done kbd {
+    font: 600 11px/1 var(--f-sans);
+    color: var(--text-strong);
+    background: var(--bg-card-hi);
+    border: 1px solid var(--border-hi);
+    border-radius: var(--r-sm);
+    padding: 2px 6px;
+    white-space: nowrap;
+}
+.share-done {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+}
+.share-done-ico {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #0f1208;
+    font: 700 14px/24px var(--f-sans);
+    text-align: center;
+}
+.share-done p {
+    margin: 0;
+    color: var(--text);
+    font: 400 13px/1.6 var(--f-sans);
+}
+.share-done strong {
+    color: var(--text-strong);
+}
+
 /* ---------- Update explanation modal ---------- */
 .update-illustration {
     width: 100%;
@@ -798,6 +856,14 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
     align-items: center;
     gap: 10px;
 }
+.status-bar .status-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+#local-tabs {
+    margin-bottom: 20px;
+}
 
 .table {
     border: 1px solid var(--border);
@@ -807,7 +873,7 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
 }
 .table-row {
     display: grid;
-    grid-template-columns: 36px minmax(220px, 3fr) 130px 100px 120px;
+    grid-template-columns: 36px minmax(220px, 3fr) 130px 100px 160px;
     gap: 14px;
     padding: 12px 16px;
     align-items: center;
@@ -834,6 +900,13 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
     display: flex;
     gap: 4px;
 }
+/* "Just in Affinity" tab: Status | Name | Actions (no Modified/Size). */
+.affinity-table .table-row {
+    grid-template-columns: 36px minmax(220px, 1fr) auto;
+}
+.affinity-table .table-row .actions {
+    margin-right: 8px;
+}
 
 .row-name {
     font: 600 14px/1.3 var(--f-sans);
@@ -856,36 +929,62 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
 }
 
 /* ============================================================
-   Installed Scripts — host table + event log + card grid
+   Affinity connection ("More info") modal — bridge diagnostics,
+   event log, and Affinity-only orphan scripts.
    ============================================================ */
 
-.bridge-table {
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    overflow: hidden;
+.modal.bridge-modal {
+    max-width: 620px;
+    max-height: calc(100vh - 48px);
+}
+.bridge-modal .modal-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+.bridge-info {
+    display: flex;
+    flex-direction: column;
     background: var(--bg-card);
-    margin-bottom: 28px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    overflow: hidden;
 }
-.bridge-row {
-    display: grid;
-    grid-template-columns: 1.4fr 2fr 0.8fr 0.8fr 1fr 120px;
-    gap: 14px;
-    padding: 14px 18px;
+.bridge-info-row {
+    display: flex;
+    justify-content: space-between;
     align-items: center;
+    padding: 10px 14px;
     border-top: 1px solid var(--hair);
+    font: 400 13px/1 var(--f-sans);
 }
-.bridge-row:first-child {
+.bridge-info-row:first-child {
     border-top: none;
 }
-.bridge-row.header {
-    background: var(--bg-card);
-    padding: 9px 18px;
+.bridge-info-row .k {
+    color: var(--text-dim);
 }
-.bridge-row.header .col {
-    font: 600 11px/1 var(--f-sans);
+.bridge-info-row .v {
+    color: var(--text-strong);
+    font-variant-numeric: tabular-nums;
+}
+.bm-status-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    text-transform: capitalize;
+}
+.bridge-section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+.bridge-empty {
+    grid-column: 1 / -1;
     color: var(--text-faint);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    font: 400 12px/1.4 var(--f-sans);
+    padding: 8px 0;
 }
 
 .event-log {
@@ -961,42 +1060,6 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
 }
 .event-stream .event-log {
     margin-top: 0;
-}
-
-.card-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 14px;
-    margin-top: 14px;
-}
-.card {
-    background: var(--bg-chrome);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    padding: 18px;
-    display: flex;
-    flex-direction: column;
-    transition:
-        border-color 0.12s,
-        background 0.12s;
-}
-.card:hover {
-    border-color: var(--border-hi);
-    background: var(--bg-chrome-hi);
-}
-.card-title {
-    font: 600 15px/1.3 var(--f-sans);
-    color: var(--text-strong);
-    margin-bottom: 6px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.section-title {
-    font: 600 18px/1.3 var(--f-sans);
-    color: var(--text-strong);
-    margin: 32px 0 10px;
 }
 
 /* ============================================================
@@ -1136,6 +1199,60 @@ body.platform-darwin .community-sticky {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 14px;
+}
+
+/* ---------- Skeleton loading (community cards, My Scripts rows, bridge cards) ---------- */
+.c-skeleton {
+    pointer-events: none;
+    cursor: default;
+}
+.sk {
+    background: linear-gradient(
+        90deg,
+        var(--bg-card) 25%,
+        var(--bg-card-hi) 37%,
+        var(--bg-card) 63%
+    );
+    background-size: 400% 100%;
+    animation: sk-shimmer 1.4s ease infinite;
+    border-radius: var(--r-sm);
+}
+@keyframes sk-shimmer {
+    0% {
+        background-position: 100% 0;
+    }
+    100% {
+        background-position: 0 0;
+    }
+}
+.sk-preview {
+    margin: -20px -20px 16px;
+    aspect-ratio: 16 / 9;
+    border-radius: 0;
+}
+.sk-title {
+    height: 15px;
+    width: 60%;
+    margin-bottom: 12px;
+}
+.sk-text {
+    height: 12px;
+    width: 100%;
+    margin-bottom: 8px;
+}
+.sk-text-short {
+    width: 45%;
+}
+.sk-foot {
+    height: 30px;
+    width: 100%;
+    margin-top: 14px;
+    border-radius: var(--r-md);
+}
+@media (prefers-reduced-motion: reduce) {
+    .sk {
+        animation: none;
+    }
 }
 
 /* ---------- Community load errors ---------- */
