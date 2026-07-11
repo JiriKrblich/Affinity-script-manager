@@ -313,19 +313,20 @@ async function getConfig() {
     needsSave = true;
   }
 
-  if (
-    !config.favoriteCommunityScripts ||
-    !Array.isArray(config.favoriteCommunityScripts)
-  ) {
-    config.favoriteCommunityScripts = [];
+  // Unified favorites keyed by script stem — shared by My Scripts and Community
+  // (favoriting a community script marks its local copy, and vice versa).
+  if (!config.favoriteScripts || !Array.isArray(config.favoriteScripts)) {
+    const migrated = Array.isArray(config.favoriteLocalScripts)
+      ? config.favoriteLocalScripts.map((f) =>
+          String(f).replace(/\.js$/i, "").toLowerCase(),
+        )
+      : [];
+    config.favoriteScripts = [...new Set(migrated)];
     needsSave = true;
   }
-
-  if (
-    !config.favoriteLocalScripts ||
-    !Array.isArray(config.favoriteLocalScripts)
-  ) {
-    config.favoriteLocalScripts = [];
+  if (config.favoriteCommunityScripts || config.favoriteLocalScripts) {
+    delete config.favoriteCommunityScripts;
+    delete config.favoriteLocalScripts;
     needsSave = true;
   }
 
@@ -848,60 +849,28 @@ app.whenReady().then(async () => {
     }
   });
 
-  ipcMain.handle("get-community-favorites", async () => {
+  // Unified favorites — keyed by script stem, shared across My Scripts + Community.
+  ipcMain.handle("get-favorites", async () => {
     try {
       const config = await getConfig();
-      return { success: true, data: config.favoriteCommunityScripts };
+      return { success: true, data: config.favoriteScripts };
     } catch (error) {
       return { success: false, error: error.message };
     }
   });
 
-  ipcMain.handle("toggle-community-favorite", async (event, favorite) => {
+  ipcMain.handle("toggle-favorite", async (event, stem) => {
     try {
-      if (!favorite || !favorite.repo || !favorite.id) {
-        return { success: false, error: "Missing favorite repo or id." };
-      }
-
+      const key = String(stem || "")
+        .replace(/\.js$/i, "")
+        .toLowerCase();
+      if (!key) return { success: false, error: "Missing script key." };
       const config = await getConfig();
-      const index = config.favoriteCommunityScripts.findIndex(
-        (item) => item.repo === favorite.repo && item.id === favorite.id,
-      );
-
-      if (index >= 0) {
-        config.favoriteCommunityScripts.splice(index, 1);
-      } else {
-        config.favoriteCommunityScripts.push({
-          repo: favorite.repo,
-          id: favorite.id,
-        });
-      }
-
+      const index = config.favoriteScripts.indexOf(key);
+      if (index >= 0) config.favoriteScripts.splice(index, 1);
+      else config.favoriteScripts.push(key);
       await saveConfig(config);
-      return { success: true, data: config.favoriteCommunityScripts };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle("get-local-favorites", async () => {
-    try {
-      const config = await getConfig();
-      return { success: true, data: config.favoriteLocalScripts };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle("toggle-local-favorite", async (event, filename) => {
-    try {
-      if (!filename) return { success: false, error: "Missing filename." };
-      const config = await getConfig();
-      const index = config.favoriteLocalScripts.indexOf(filename);
-      if (index >= 0) config.favoriteLocalScripts.splice(index, 1);
-      else config.favoriteLocalScripts.push(filename);
-      await saveConfig(config);
-      return { success: true, data: config.favoriteLocalScripts };
+      return { success: true, data: config.favoriteScripts };
     } catch (error) {
       return { success: false, error: error.message };
     }

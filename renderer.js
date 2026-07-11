@@ -3,11 +3,11 @@ const state = {
   nav: "local",
   localTab: "local", // 'local' | 'affinity' — My Scripts sub-tabs
   localQuery: "",
-  favoriteLocalScripts: new Set(),
   communityQuery: "",
   communityFilter: "all",
   communitySort: "name",
-  favoriteCommunityIds: new Set(),
+  // Unified favorites, keyed by script stem — shared by My Scripts + Community.
+  favorites: new Set(),
   installedIds: new Set(),
   editorFile: null,
   editorDirty: false,
@@ -18,9 +18,21 @@ const state = {
 // Live Ace editor instance (outside `state` so it's not treated as declarative UI state).
 let activeEditor = null;
 
+// Favorite key = script stem. A community script (by name) and its downloaded
+// local file (by filename) resolve to the same stem, so a favorite is shared.
+function scriptStem(nameOrFile) {
+  return String(nameOrFile || "")
+    .replace(/\.js$/i, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "-");
+}
 function communityFavoriteKey(script) {
-  if (!script || !script._source || !script.id) return "";
-  return `${script._source}::${script.id}`;
+  return scriptStem(script && script.name);
+}
+async function toggleScriptFavorite(stem) {
+  const r = await window.api.toggleFavorite(stem);
+  if (r && r.success) state.favorites = new Set(r.data);
+  return !!(r && r.success);
 }
 
 function communityPreviewUrl(script) {
@@ -759,11 +771,9 @@ async function renderLocal(root) {
   updateNavCount("local", items.length);
 
   const favRes = await window.api
-    .getLocalFavorites()
+    .getFavorites()
     .catch(() => ({ success: false }));
-  state.favoriteLocalScripts = new Set(
-    favRes && favRes.success ? favRes.data : [],
-  );
+  state.favorites = new Set(favRes && favRes.success ? favRes.data : []);
 
   // Normalise bridge titles for cross-referencing (stem-based, lowercase).
   // Bridge is "online" whenever the RPC succeeded, even if the library is empty
@@ -994,8 +1004,8 @@ async function renderLocal(root) {
     // Favorites float to the top (stable sort keeps the rest in place).
     list.sort(
       (a, b) =>
-        (state.favoriteLocalScripts.has(b.file) ? 1 : 0) -
-        (state.favoriteLocalScripts.has(a.file) ? 1 : 0),
+        (state.favorites.has(scriptStem(b.file)) ? 1 : 0) -
+        (state.favorites.has(scriptStem(a.file)) ? 1 : 0),
     );
 
     const table = document.createElement("div");
@@ -1055,18 +1065,15 @@ async function renderLocal(root) {
     nameLine.className = "row-name";
     nameLine.innerHTML = `${escapeHtml(it.name)}<span class="row-ext">.js</span>`;
 
-    const isFav = state.favoriteLocalScripts.has(it.file);
+    const favKey = scriptStem(it.file);
+    const isFav = state.favorites.has(favKey);
     const fav = document.createElement("button");
     fav.className = "row-fav" + (isFav ? " active" : "");
     fav.title = isFav ? "Remove from favorites" : "Add to favorites";
     fav.appendChild(Ico("star", { size: 13, sw: 1.4 }));
     fav.onclick = async (e) => {
       e.stopPropagation();
-      const r = await window.api.toggleLocalFavorite(it.file);
-      if (r && r.success) {
-        state.favoriteLocalScripts = new Set(r.data);
-        paintLocalTab();
-      }
+      if (await toggleScriptFavorite(favKey)) paintLocalTab();
     };
 
     const update = updateFor(it);
@@ -1421,12 +1428,71 @@ async function renderCommunity(root) {
   const res = await window.api.listCommunityScripts();
   const scripts = res && res.success ? res.data || [] : [];
   renderCommunityErrors(screen.querySelector("#c-errors"), res);
-  const favoritesRes = await window.api.getCommunityFavorites();
-  state.favoriteCommunityIds = new Set(
-    favoritesRes && favoritesRes.success
-      ? (favoritesRes.data || []).map((item) => `${item.repo}::${item.id}`)
-      : [],
+  const favoritesRes = await window.api.getFavorites();
+  state.favorites = new Set(
+    favoritesRes && favoritesRes.success ? favoritesRes.data : [],
   );
+
+  // Cross-reference the local library so each card knows its state:
+  //   install    — not in the library yet
+  //   installed  — in the library at the same/newer version (grey, no action)
+  //   update     — in the library but the community has a newer version (orange)
+  const localRes = await window.api
+    .listLocalScripts()
+    .catch(() => ({ success: false }));
+  const localByStem = new Map();
+  if (localRes && localRes.success && Array.isArray(localRes.data)) {
+    for (const it of localRes.data) {
+      localByStem.set(it.file.replace(/\.js$/i, "").toLowerCase(), it);
+      if (it.name)
+        localByStem.set(it.name.toLowerCase().replace(/[^a-z0-9_-]/g, "-"), it);
+    }
+  }
+  function communityInstallState(s) {
+    if (state.installedIds.has(s.download_url)) return "installed";
+    const stem = (s.name || "").toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+    const local = localByStem.get(stem);
+    if (!local) return "install";
+    if (s.version && local.version && cmpVer(local.version, s.version) < 0)
+      return "update";
+    return "installed";
+  }
+  // Button appearance for a community script's install state.
+  function communityBtnSpec(s) {
+    const st = communityInstallState(s);
+    if (st === "installed")
+      return { cls: " installed", label: "✓ Installed", disabled: true };
+    if (st === "update")
+      return { cls: " update", label: "↑ Update", disabled: false };
+    return { cls: "", label: "Install", disabled: false };
+  }
+
+  // Install-button click: install fresh, or (for the update state) open the same
+  // explanatory popup as My Scripts so users understand Affinity can't overwrite.
+  function handleCommunityInstallClick(s, button) {
+    if (communityInstallState(s) !== "update") {
+      installCommunityScript(s, button);
+      return;
+    }
+    const stem = (s.name || "").toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+    const local = localByStem.get(stem);
+    const localVer = (local && local.version) || "?";
+    openUpdateModal({
+      heading: `Update ${s.name}`,
+      versionLine: `<span class="updates-ver-old">v${escapeHtml(localVer)}</span> <span class="updates-ver-arrow">→</span> <span class="updates-ver-new">v${escapeHtml(s.version || "?")}</span>`,
+      isActive: false,
+      run: async (install) => {
+        if (!(await applyScriptUpdate(s))) return false;
+        if (install) {
+          const fn =
+            (s.name || "script").toLowerCase().replace(/[^a-z0-9_-]/g, "-") +
+            ".js";
+          await window.api.pushToMcp(fn);
+        }
+        return true;
+      },
+    });
+  }
 
   screen.querySelector("#c-count").textContent = scripts.length;
   updateNavCount("community", scripts.length);
@@ -1445,7 +1511,7 @@ async function renderCommunity(root) {
   const tabs = screen.querySelector("#c-tabs");
   function favoriteCount() {
     return scripts.filter((s) =>
-      state.favoriteCommunityIds.has(communityFavoriteKey(s)),
+      state.favorites.has(communityFavoriteKey(s)),
     ).length;
   }
 
@@ -1568,7 +1634,7 @@ async function renderCommunity(root) {
     const slide = document.createElement("div");
     slide.className = "cc-slide";
     const imageUrl = communityPreviewUrl(s);
-    const installed = state.installedIds.has(s.download_url);
+    const spec = communityBtnSpec(s);
     slide.innerHTML = `
       <div class="cc-media">
         ${
@@ -1583,7 +1649,7 @@ async function renderCommunity(root) {
         <div class="cc-author">by ${escapeHtml(s.author || "community")}</div>
         <p class="cc-desc">${escapeHtml(s.description || "")}</p>
         <div class="cc-actions">
-          <button class="accent-btn compact cc-install${installed ? " installed" : ""}">${installed ? "✓ Installed" : "Install"}</button>
+          <button class="accent-btn compact cc-install${spec.cls}"${spec.disabled ? " disabled" : ""}>${spec.label}</button>
           <button class="gh-btn compact cc-details">Details</button>
         </div>
       </div>`;
@@ -1601,7 +1667,7 @@ async function renderCommunity(root) {
     const installBtn = slide.querySelector(".cc-install");
     installBtn.onclick = (e) => {
       e.stopPropagation();
-      installCommunityScript(s, installBtn);
+      handleCommunityInstallClick(s, installBtn);
     };
     slide.querySelector(".cc-details").onclick = (e) => {
       e.stopPropagation();
@@ -1632,26 +1698,16 @@ async function renderCommunity(root) {
     });
   };
 
-  function applyFavoritesResponse(response) {
-    state.favoriteCommunityIds = new Set(
-      (response.data || []).map((item) => `${item.repo}::${item.id}`),
-    );
-    renderTabs();
-    paint();
-  }
-
   async function toggleCommunityFavorite(script, button) {
     if (button) button.disabled = true;
-    const r = await window.api.toggleCommunityFavorite({
-      repo: script._source,
-      id: script.id,
-    });
+    const ok = await toggleScriptFavorite(communityFavoriteKey(script));
     if (button) button.disabled = false;
-    if (!r || !r.success) {
-      alert((r && r.error) || "Favorite update failed");
+    if (!ok) {
+      alert("Favorite update failed");
       return false;
     }
-    applyFavoritesResponse(r);
+    renderTabs();
+    paint();
     return true;
   }
 
@@ -1691,7 +1747,9 @@ async function renderCommunity(root) {
     }
     state.installedIds.add(script.download_url);
     if (button) {
+      button.classList.remove("update");
       button.classList.add("installed");
+      button.disabled = true;
       button.textContent = "\u2713 Installed";
     }
     paint();
@@ -1703,10 +1761,10 @@ async function renderCommunity(root) {
     bd.className = "modal-backdrop";
     const imageUrl = communityPreviewUrl(script);
     const contributors = formatContributors(script.contributors);
-    const isFavorite = state.favoriteCommunityIds.has(
+    const isFavorite = state.favorites.has(
       communityFavoriteKey(script),
     );
-    const isInstalled = state.installedIds.has(script.download_url);
+    const spec = communityBtnSpec(script);
     bd.innerHTML = `
       <div class="modal community-detail-modal">
         <button class="icon-btn community-detail-close" id="m-close" title="Close"></button>
@@ -1743,7 +1801,7 @@ async function renderCommunity(root) {
         <div class="modal-foot community-detail-actions">
           <button class="gh-btn" id="m-favorite"></button>
           <button class="gh-btn" id="m-save"></button>
-          <button class="accent-btn${isInstalled ? " installed" : ""}" id="m-install">${isInstalled ? "\u2713 Installed" : "Install"}</button>
+          <button class="accent-btn${spec.cls}" id="m-install"${spec.disabled ? " disabled" : ""}>${spec.label}</button>
         </div>
       </div>`;
     document.body.appendChild(bd);
@@ -1769,7 +1827,7 @@ async function renderCommunity(root) {
 
     const favoriteBtn = bd.querySelector("#m-favorite");
     const paintFavoriteBtn = () => {
-      const active = state.favoriteCommunityIds.has(communityFavoriteKey(script));
+      const active = state.favorites.has(communityFavoriteKey(script));
       favoriteBtn.classList.toggle("active", active);
       favoriteBtn.replaceChildren(Ico("star", { size: 14, sw: 1.35 }));
       favoriteBtn.append(document.createTextNode(active ? " Favorited" : " Favorite"));
@@ -1798,8 +1856,7 @@ async function renderCommunity(root) {
     };
 
     const installBtn = bd.querySelector("#m-install");
-    installBtn.disabled = isInstalled;
-    installBtn.onclick = () => installCommunityScript(script, installBtn);
+    installBtn.onclick = () => handleCommunityInstallClick(script, installBtn);
   }
 
   function paint() {
@@ -1808,7 +1865,7 @@ async function renderCommunity(root) {
     let filtered = scripts.filter((s) => {
       const favoriteKey = communityFavoriteKey(s);
       if (state.communityFilter === "__favorites") {
-        if (!state.favoriteCommunityIds.has(favoriteKey)) return false;
+        if (!state.favorites.has(favoriteKey)) return false;
       } else if (
         state.communityFilter !== "all" &&
         (s.category || "other").toLowerCase() !== state.communityFilter
@@ -1857,9 +1914,9 @@ async function renderCommunity(root) {
   }
 
   function buildCommunityCard(s) {
-      const installed = state.installedIds.has(s.download_url);
+      const spec = communityBtnSpec(s);
       const favoriteKey = communityFavoriteKey(s);
-      const isFavorite = state.favoriteCommunityIds.has(favoriteKey);
+      const isFavorite = state.favorites.has(favoriteKey);
       const card = document.createElement("div");
       card.className = "c-card";
       const imageUrl = communityPreviewUrl(s);
@@ -1886,7 +1943,7 @@ async function renderCommunity(root) {
           <span class="tag">${escapeHtml((s.category || "other").toLowerCase())}</span>
           <div style="display:flex; gap:6px; align-items:center;">
             <button class="icon-btn c-save" title="Save to My Scripts (don't install)"></button>
-            <button class="install-btn${installed ? " installed" : ""}">${installed ? "\u2713 Installed" : "Install"}</button>
+            <button class="install-btn${spec.cls}"${spec.disabled ? " disabled" : ""}>${spec.label}</button>
           </div>
         </div>
       `);
@@ -1925,9 +1982,9 @@ async function renderCommunity(root) {
       };
 
       const btn = card.querySelector(".install-btn");
-      btn.onclick = async (e) => {
+      btn.onclick = (e) => {
         e.stopPropagation();
-        await installCommunityScript(s, btn);
+        handleCommunityInstallClick(s, btn);
       };
       card.onclick = () => openCommunityDetailModal(s);
       return card;

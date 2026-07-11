@@ -1463,9 +1463,13 @@ body.platform-darwin .community-sticky {
     margin-top: 14px;
 }
 .cc-install.installed {
-    background: var(--accent-dim);
-    color: var(--accent);
+    background: var(--bg-hover);
+    color: var(--text-faint);
     cursor: default;
+}
+.cc-install.update {
+    background: var(--warn);
+    color: #1c1204;
 }
 .cc-arrow {
     position: absolute;
@@ -1679,11 +1683,22 @@ body.platform-darwin .community-sticky {
     background: var(--text-strong);
     color: var(--bg-chrome);
 }
-.c-card .install-btn.installed {
-    background: var(--accent-dim);
-    border-color: rgba(167, 241, 117, 0.25);
-    color: var(--accent);
+.c-card .install-btn.installed,
+.c-card .install-btn.installed:hover {
+    background: var(--bg-hover);
+    border-color: var(--border);
+    color: var(--text-faint);
     cursor: default;
+}
+.c-card .install-btn.update {
+    background: var(--warn);
+    border-color: var(--warn);
+    color: #1c1204;
+}
+.c-card .install-btn.update:hover {
+    background: #ffbe52;
+    border-color: #ffbe52;
+    color: #1c1204;
 }
 
 /* .modal.community-detail-modal (two classes) so this wins over the later,
@@ -1801,9 +1816,13 @@ body.platform-darwin .community-sticky {
     fill: currentColor;
 }
 .community-detail-actions .accent-btn.installed {
-    background: var(--accent-dim);
-    color: var(--accent);
+    background: var(--bg-hover);
+    color: var(--text-faint);
     cursor: default;
+}
+.community-detail-actions .accent-btn.update {
+    background: var(--warn);
+    color: #1c1204;
 }
 
 /* ============================================================

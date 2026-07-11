@@ -19,13 +19,11 @@ contextBridge.exposeInMainWorld('api', {
   readMcpMetadata: (mcpTitle) => ipcRenderer.invoke('read-mcp-metadata', mcpTitle),
   buildShareIssue: (filename) => ipcRenderer.invoke('build-share-issue', filename),
   buildShareIssueMcp: (mcpTitle) => ipcRenderer.invoke('build-share-issue-mcp', mcpTitle),
-  getLocalFavorites: () => ipcRenderer.invoke('get-local-favorites'),
-  toggleLocalFavorite: (filename) => ipcRenderer.invoke('toggle-local-favorite', filename),
+  getFavorites: () => ipcRenderer.invoke('get-favorites'),
+  toggleFavorite: (stem) => ipcRenderer.invoke('toggle-favorite', stem),
 
   // --- Komunitní Marketplace ---
   listCommunityScripts: () => ipcRenderer.invoke('list-community-scripts'),
-  getCommunityFavorites: () => ipcRenderer.invoke('get-community-favorites'),
-  toggleCommunityFavorite: (favorite) => ipcRenderer.invoke('toggle-community-favorite', favorite),
   downloadCommunityScript: (url, filename, metadata) => ipcRenderer.invoke('download-community-script', url, filename, metadata),
   saveCommunityScript:     (url, filename, metadata) => ipcRenderer.invoke('save-community-script',     url, filename, metadata),
   openExternalRepo: () => ipcRenderer.send('open-external-repo'),
