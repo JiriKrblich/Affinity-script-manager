@@ -2,6 +2,8 @@ const Ico = window.Icons.createIcon;
 const state = {
   nav: "local",
   localTab: "local", // 'local' | 'affinity' — My Scripts sub-tabs
+  localQuery: "",
+  favoriteLocalScripts: new Set(),
   communityQuery: "",
   communityFilter: "all",
   communitySort: "name",
@@ -723,7 +725,13 @@ async function renderLocal(root) {
     <div class="eyebrow">Library</div>
     <h1>My Scripts</h1>
     <p class="subhead" id="local-subhead">Loading…</p>
-    <div class="status-bar" id="local-status"></div>
+    <div class="local-statusline" id="local-status"></div>
+    <div class="search-bar" style="margin-bottom:16px;">
+      <div class="search-wrap">
+        <span id="local-search-ico"></span>
+        <input id="local-search" type="text" placeholder="Search your scripts by name or description…" />
+      </div>
+    </div>
     <div class="cat-tabs" id="local-tabs"></div>
     <div class="updates-panel" id="local-updates" hidden></div>
     <div id="local-content"></div>
@@ -749,6 +757,13 @@ async function renderLocal(root) {
   const items = localRes.data;
   const totalBytes = items.reduce((a, b) => a + b.size, 0);
   updateNavCount("local", items.length);
+
+  const favRes = await window.api
+    .getLocalFavorites()
+    .catch(() => ({ success: false }));
+  state.favoriteLocalScripts = new Set(
+    favRes && favRes.success ? favRes.data : [],
+  );
 
   // Normalise bridge titles for cross-referencing (stem-based, lowercase).
   // Bridge is "online" whenever the RPC succeeded, even if the library is empty
@@ -793,14 +808,11 @@ async function renderLocal(root) {
   screen.querySelector("#local-subhead").innerHTML =
     `${items.length} scripts · ${fmtBytes(totalBytes)} total`;
   screen.querySelector("#local-status").innerHTML = `
-    <div class="left">
-      <span class="status-dot ${bridgeOnline ? "on" : ""}"></span>
-      <span>${bridgeOnline ? `Connected to Affinity · ${activeCount} active` : "Affinity not connected"}</span>
-    </div>
-    <div class="status-right">
-      <span style="color:var(--text-faint); font-size:12px;">watch mode: on</span>
-      <button class="gh-btn compact" id="btn-bridge-info">More info</button>
-    </div>
+    <span class="status-dot ${bridgeOnline ? "on" : ""}"></span>
+    <span>${bridgeOnline ? `Affinity connected · ${activeCount} active` : "Affinity not connected"}</span>
+    <span class="sl-sep">·</span>
+    <span>watch mode on</span>
+    <button class="sl-more" id="btn-bridge-info">More info</button>
   `;
   screen.querySelector("#btn-bridge-info").onclick = openBridgeModal;
 
@@ -904,7 +916,14 @@ async function renderLocal(root) {
     if (orphans.length === 0)
       return emptyRow("Every script in Affinity is already in your library.");
 
-    for (const t of orphans) {
+    const q = state.localQuery.trim().toLowerCase();
+    const list = q
+      ? orphans.filter((t) => t.toLowerCase().includes(q))
+      : orphans;
+    if (list.length === 0)
+      return emptyRow(`No scripts match "${state.localQuery.trim()}".`);
+
+    for (const t of list) {
       const row = document.createElement("div");
       row.className = "table-row";
 
@@ -964,6 +983,21 @@ async function renderLocal(root) {
   }
 
   function buildLocalTable(container) {
+    const q = state.localQuery.trim().toLowerCase();
+    let list = q
+      ? items.filter((it) =>
+          [it.name, it.description, it.file].some((v) =>
+            (v || "").toLowerCase().includes(q),
+          ),
+        )
+      : items.slice();
+    // Favorites float to the top (stable sort keeps the rest in place).
+    list.sort(
+      (a, b) =>
+        (state.favoriteLocalScripts.has(b.file) ? 1 : 0) -
+        (state.favoriteLocalScripts.has(a.file) ? 1 : 0),
+    );
+
     const table = document.createElement("div");
     table.className = "table";
     const hdr = document.createElement("div");
@@ -971,18 +1005,21 @@ async function renderLocal(root) {
     hdr.innerHTML = `<div class="col">Status</div><div class="col">Name</div><div class="col">Modified</div><div class="col">Size</div><div class="col">Actions</div>`;
     table.appendChild(hdr);
 
-    if (items.length === 0) {
+    if (list.length === 0) {
       const empty = document.createElement("div");
       empty.className = "table-row";
       empty.style.padding = "48px 20px";
       empty.style.color = "var(--text-faint)";
-      empty.textContent = "No scripts yet. Click Add Script to add one.";
+      empty.textContent =
+        items.length === 0
+          ? "No scripts yet. Click Add Script to add one."
+          : `No scripts match "${state.localQuery.trim()}".`;
       table.appendChild(empty);
       container.appendChild(table);
       return;
     }
 
-    for (const it of items) {
+    for (const it of list) {
       const row = document.createElement("div");
       row.className = "table-row";
 
@@ -1017,6 +1054,21 @@ async function renderLocal(root) {
     const nameLine = document.createElement("div");
     nameLine.className = "row-name";
     nameLine.innerHTML = `${escapeHtml(it.name)}<span class="row-ext">.js</span>`;
+
+    const isFav = state.favoriteLocalScripts.has(it.file);
+    const fav = document.createElement("button");
+    fav.className = "row-fav" + (isFav ? " active" : "");
+    fav.title = isFav ? "Remove from favorites" : "Add to favorites";
+    fav.appendChild(Ico("star", { size: 13, sw: 1.4 }));
+    fav.onclick = async (e) => {
+      e.stopPropagation();
+      const r = await window.api.toggleLocalFavorite(it.file);
+      if (r && r.success) {
+        state.favoriteLocalScripts = new Set(r.data);
+        paintLocalTab();
+      }
+    };
+
     const update = updateFor(it);
     if (update) {
       const upBadge = document.createElement("button");
@@ -1038,7 +1090,10 @@ async function renderLocal(root) {
       };
       nameLine.appendChild(upBadge);
     }
-    nameCell.appendChild(nameLine);
+    const nameHead = document.createElement("div");
+    nameHead.className = "row-name-head";
+    nameHead.append(fav, nameLine);
+    nameCell.appendChild(nameHead);
     if (it.description) {
       const desc = document.createElement("div");
       desc.className = "row-desc";
@@ -1111,6 +1166,16 @@ async function renderLocal(root) {
     }
     container.appendChild(table);
   }
+
+  screen
+    .querySelector("#local-search-ico")
+    .appendChild(Ico("search", { size: 13 }));
+  const localSearch = screen.querySelector("#local-search");
+  localSearch.value = state.localQuery;
+  localSearch.oninput = (e) => {
+    state.localQuery = e.target.value;
+    paintLocalTab();
+  };
 
   renderLocalTabs();
   paintLocalTab();

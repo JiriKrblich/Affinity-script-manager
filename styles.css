@@ -673,17 +673,34 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
    My Scripts — list view with state tags
    ============================================================ */
 
-.status-bar {
+/* Slim, borderless connection line (was a heavy card). */
+.local-statusline {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    padding: 11px 16px;
-    font: 400 13px/1 var(--f-sans);
-    color: var(--text);
-    margin-bottom: 16px;
+    gap: 8px;
+    margin-bottom: 14px;
+    font: 400 12px/1 var(--f-sans);
+    color: var(--text-dim);
+}
+.local-statusline .sl-sep {
+    color: var(--text-mute);
+}
+.local-statusline .sl-more {
+    margin-left: auto;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    font: 500 12px/1 var(--f-sans);
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: var(--r-sm);
+    transition:
+        color 0.12s,
+        background 0.12s;
+}
+.local-statusline .sl-more:hover {
+    color: var(--text-strong);
+    background: var(--bg-hover);
 }
 
 /* ---------- Share to community modal ---------- */
@@ -851,16 +868,6 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
 .updates-btn {
     flex-shrink: 0;
 }
-.status-bar .left {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-.status-bar .status-right {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
 #local-tabs {
     margin-bottom: 20px;
 }
@@ -911,6 +918,38 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
 .row-name {
     font: 600 14px/1.3 var(--f-sans);
     color: var(--text-strong);
+}
+.row-name-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.row-fav {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: var(--r-sm);
+    color: var(--text-mute);
+    cursor: pointer;
+    transition:
+        color 0.12s,
+        background 0.12s;
+}
+.row-fav:hover {
+    color: var(--text-dim);
+    background: var(--bg-hover);
+}
+.row-fav.active {
+    color: var(--warn);
+}
+.row-fav.active svg path {
+    fill: currentColor;
 }
 .row-desc {
     font: 400 12px/1.5 var(--f-sans);

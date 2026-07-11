@@ -321,6 +321,14 @@ async function getConfig() {
     needsSave = true;
   }
 
+  if (
+    !config.favoriteLocalScripts ||
+    !Array.isArray(config.favoriteLocalScripts)
+  ) {
+    config.favoriteLocalScripts = [];
+    needsSave = true;
+  }
+
   if (typeof config.sidebarCollapsed !== "boolean") {
     config.sidebarCollapsed = false;
     needsSave = true;
@@ -871,6 +879,29 @@ app.whenReady().then(async () => {
 
       await saveConfig(config);
       return { success: true, data: config.favoriteCommunityScripts };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("get-local-favorites", async () => {
+    try {
+      const config = await getConfig();
+      return { success: true, data: config.favoriteLocalScripts };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("toggle-local-favorite", async (event, filename) => {
+    try {
+      if (!filename) return { success: false, error: "Missing filename." };
+      const config = await getConfig();
+      const index = config.favoriteLocalScripts.indexOf(filename);
+      if (index >= 0) config.favoriteLocalScripts.splice(index, 1);
+      else config.favoriteLocalScripts.push(filename);
+      await saveConfig(config);
+      return { success: true, data: config.favoriteLocalScripts };
     } catch (error) {
       return { success: false, error: error.message };
     }
