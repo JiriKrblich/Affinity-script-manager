@@ -703,6 +703,57 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
     background: var(--bg-hover);
 }
 
+/* ---------- Run without install modal ---------- */
+.modal.run-modal {
+    max-width: 760px;
+    max-height: calc(100vh - 48px);
+}
+.run-modal .modal-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+.run-preview {
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    overflow: hidden;
+    background: var(--bg-card);
+}
+.run-preview[hidden] {
+    display: none;
+}
+.run-preview img {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+.run-console-label {
+    font: 600 11px/1 var(--f-sans);
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.run-console {
+    margin: 0;
+    max-height: 260px;
+    overflow: auto;
+    background: var(--log-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    padding: 12px 14px;
+    font:
+        400 12px/1.6 SFMono-Regular,
+        Menlo,
+        Consolas,
+        monospace;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.run-console.run-error {
+    color: var(--danger-text);
+}
+
 /* ---------- Share to community modal ---------- */
 .share-steps {
     margin: 4px 0 0;

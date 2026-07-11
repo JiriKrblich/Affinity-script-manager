@@ -13,6 +13,9 @@ contextBridge.exposeInMainWorld('api', {
 
   // --- MCP Cloud ---
   listMcpScripts: () => ipcRenderer.invoke('list-mcp-scripts'),
+  executeScript: (code) => ipcRenderer.invoke('execute-script', code),
+  runCommunityScript: (downloadUrl) => ipcRenderer.invoke('run-community-script', downloadUrl),
+  renderActivePreview: () => ipcRenderer.invoke('render-active-preview'),
   saveScript: (title, description, code) => ipcRenderer.invoke('save-script', title, description, code),
   downloadFromMcp: (mcpTitle, localName) => ipcRenderer.invoke('download-from-mcp', mcpTitle, localName),
   exportMcpToDisk: (mcpTitle) => ipcRenderer.invoke('export-mcp-to-disk', mcpTitle),

@@ -729,6 +729,78 @@ function renderUpdatesPanel(container, pending) {
     });
 }
 
+// "Run without install" — execute a script in Affinity right now (via MCP,
+// without adding it to the library) and show the console output + a rendered
+// preview. opts: { code } (editor buffer) or { downloadUrl } (community), plus
+// optional name.
+function openRunModal(opts = {}) {
+  const bd = document.createElement("div");
+  bd.className = "modal-backdrop";
+  bd.innerHTML = `
+    <div class="modal run-modal">
+      <div class="modal-head">
+        <h3>Run without install${opts.name ? ` — ${escapeHtml(opts.name)}` : ""}</h3>
+        <button class="icon-btn" id="m-close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="run-note">Runs this script in Affinity now, without adding it to your library.</p>
+        <div class="run-preview" id="run-preview" hidden></div>
+        <div class="run-console-label">Console output</div>
+        <pre class="run-console" id="run-console"></pre>
+      </div>
+      <div class="modal-foot">
+        <button class="gh-btn" id="m-rerun">Run again</button>
+        <button class="accent-btn" id="m-done">Done</button>
+      </div>
+    </div>`;
+  bd.querySelector("#m-close").appendChild(Ico("close", { size: 12 }));
+  document.body.appendChild(bd);
+
+  const close = () => bd.remove();
+  bd.querySelector("#m-close").onclick = close;
+  bd.querySelector("#m-done").onclick = close;
+  bd.addEventListener("click", (e) => {
+    if (e.target === bd) close();
+  });
+
+  const consoleEl = bd.querySelector("#run-console");
+  const previewEl = bd.querySelector("#run-preview");
+  const rerunBtn = bd.querySelector("#m-rerun");
+
+  async function run() {
+    rerunBtn.disabled = true;
+    consoleEl.innerHTML = '<span class="loading">Running in Affinity</span>';
+    previewEl.hidden = true;
+    previewEl.innerHTML = "";
+
+    const r = opts.downloadUrl
+      ? await window.api.runCommunityScript(opts.downloadUrl)
+      : await window.api.executeScript(opts.code || "");
+    if (!r || !r.success) {
+      consoleEl.classList.add("run-error");
+      consoleEl.textContent =
+        (r && r.error) ||
+        "Run failed — make sure Affinity is open and the MCP bridge is running.";
+      rerunBtn.disabled = false;
+      return;
+    }
+    consoleEl.classList.remove("run-error");
+    consoleEl.textContent =
+      r.output && r.output.trim() ? r.output : "(no console output)";
+
+    // Best-effort rendered preview of the active document.
+    const p = await window.api.renderActivePreview().catch(() => null);
+    if (p && p.success && p.image) {
+      previewEl.hidden = false;
+      previewEl.innerHTML = `<img src="${p.image}" alt="Rendered preview of the active document">`;
+    }
+    rerunBtn.disabled = false;
+  }
+
+  rerunBtn.onclick = run;
+  run();
+}
+
 // ---------- My Scripts screen ----------
 async function renderLocal(root) {
   const screen = document.createElement("div");
@@ -1800,6 +1872,7 @@ async function renderCommunity(root) {
         </div>
         <div class="modal-foot community-detail-actions">
           <button class="gh-btn" id="m-favorite"></button>
+          <button class="gh-btn" id="m-run"><span id="ico-run"></span> Run without install</button>
           <button class="gh-btn" id="m-save"></button>
           <button class="accent-btn${spec.cls}" id="m-install"${spec.disabled ? " disabled" : ""}>${spec.label}</button>
         </div>
@@ -1854,6 +1927,11 @@ async function renderCommunity(root) {
         saveBtn.disabled = false;
       }, 1600);
     };
+
+    const runBtn = bd.querySelector("#m-run");
+    runBtn.querySelector("#ico-run").appendChild(Ico("terminal", { size: 13 }));
+    runBtn.onclick = () =>
+      openRunModal({ downloadUrl: script.download_url, name: script.name });
 
     const installBtn = bd.querySelector("#m-install");
     installBtn.onclick = () => handleCommunityInstallClick(script, installBtn);
@@ -2465,6 +2543,7 @@ async function renderEditor(root) {
     <div class="editor-header">
       <button class="gh-btn compact" id="ed-back">${backLabel}</button>
       <div class="editor-filename${isNew ? " new" : ""}">${filenameHtml}</div>
+      <button class="gh-btn compact" id="ed-run" title="Run this buffer in Affinity without installing"><span id="ed-run-ico"></span> Run</button>
       <button class="accent-btn compact" id="ed-save" disabled>Save</button>
     </div>
     <div class="editor-host" id="editor-host"></div>
@@ -2477,6 +2556,16 @@ async function renderEditor(root) {
   const host = screen.querySelector("#editor-host");
   const nameInput = screen.querySelector("#ed-filename"); // null when not isNew
   backBtn.onclick = () => navigate(origin);
+
+  const runBtn = screen.querySelector("#ed-run");
+  runBtn.querySelector("#ed-run-ico").appendChild(Ico("terminal", { size: 12 }));
+  runBtn.onclick = () => {
+    if (!activeEditor) return;
+    openRunModal({
+      code: activeEditor.getValue(),
+      name: isNew && nameInput ? nameInput.value.trim() || undefined : filename,
+    });
+  };
 
   if (!window.ace) {
     host.innerHTML = `<div style="padding:40px; color:var(--danger-text); font-size:13px;">

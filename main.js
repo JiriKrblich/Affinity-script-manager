@@ -30,6 +30,17 @@ function getTextContent(result) {
     .join("\n");
 }
 
+// A render_* tool returns a base64 JPEG — either as an image content item or as
+// text. Normalize both to a data: URL the renderer can drop into an <img>.
+function getImageDataUrl(result) {
+  const items = (result && result.content) || [];
+  const img = items.find((i) => i && i.type === "image" && i.data);
+  if (img) return `data:${img.mimeType || "image/jpeg"};base64,${img.data}`;
+  const text = getTextContent(result).trim();
+  if (!text) return "";
+  return text.startsWith("data:") ? text : `data:image/jpeg;base64,${text}`;
+}
+
 function parseCsvTextContent(result) {
   const textChunks = (result.content || [])
     .filter((i) => i && i.type === "text")
@@ -590,6 +601,56 @@ app.whenReady().then(async () => {
     try {
       const result = await callTool(client, "list_library_scripts", {});
       return { success: true, data: getTextContent(result) || result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Run a script in Affinity directly (without installing it to the library).
+  // Scripts don't return values — they log via console.log — so `output` is the
+  // captured console text.
+  ipcMain.handle("execute-script", async (event, code) => {
+    try {
+      const result = await callTool(client, "execute_script", { script: code });
+      return { success: true, output: getTextContent(result) };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Fetch a community script by its raw URL and run it in Affinity without
+  // installing ("Run without install" from the community detail popup).
+  ipcMain.handle("run-community-script", async (event, downloadUrl) => {
+    try {
+      const response = await fetchFresh(downloadUrl);
+      if (!response.ok) throw new Error("Couldn't download the script.");
+      const code = await response.text();
+      const result = await callTool(client, "execute_script", { script: code });
+      return { success: true, output: getTextContent(result) };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Render the active document's first spread to a JPEG so the run result can be
+  // previewed inline. Needs the document's sessionUuid, which we read via a tiny
+  // helper script.
+  ipcMain.handle("render-active-preview", async () => {
+    try {
+      const uuidRes = await callTool(client, "execute_script", {
+        script:
+          "const { Document } = require('/document'); console.log(Document.current.sessionUuid);",
+      });
+      const uuid = getTextContent(uuidRes).trim();
+      if (!uuid)
+        return { success: false, error: "No active document to preview." };
+      const render = await callTool(client, "render_spread", {
+        document_session_uuid: uuid,
+        spread_index: 0,
+      });
+      const image = getImageDataUrl(render);
+      if (!image) return { success: false, error: "Nothing was rendered." };
+      return { success: true, image };
     } catch (error) {
       return { success: false, error: error.message };
     }
