@@ -1833,6 +1833,11 @@ async function renderCommunity(root) {
     bd.className = "modal-backdrop";
     const imageUrl = communityPreviewUrl(script);
     const contributors = formatContributors(script.contributors);
+    const contactUrl = script.url || script.website || script.link || "";
+    const contactEmail = script.email || "";
+    const prettyUrl = String(contactUrl)
+      .replace(/^https?:\/\//, "")
+      .replace(/\/+$/, "");
     const isFavorite = state.favorites.has(
       communityFavoriteKey(script),
     );
@@ -1863,6 +1868,14 @@ async function renderCommunity(root) {
                   : ""
               }
             </div>
+            ${
+              contactUrl || contactEmail
+                ? `<div class="community-detail-links">
+                    ${contactUrl ? `<button class="detail-link" data-href="${escapeHtml(contactUrl)}"><span class="detail-link-ico" data-ico="external"></span>${escapeHtml(prettyUrl)}</button>` : ""}
+                    ${contactEmail ? `<button class="detail-link" data-href="mailto:${escapeHtml(contactEmail)}"><span class="detail-link-ico" data-ico="external"></span>${escapeHtml(contactEmail)}</button>` : ""}
+                  </div>`
+                : ""
+            }
             <div class="community-detail-desc">${
               script.description
                 ? escapeHtml(script.description)
@@ -1884,6 +1897,15 @@ async function renderCommunity(root) {
     bd.querySelector("#m-close").onclick = close;
     bd.addEventListener("click", (e) => {
       if (e.target === bd) close();
+    });
+
+    bd.querySelectorAll(".detail-link").forEach((link) => {
+      const ico = link.querySelector(".detail-link-ico");
+      if (ico) ico.appendChild(Ico(ico.dataset.ico || "external", { size: 12 }));
+      link.onclick = (e) => {
+        e.stopPropagation();
+        window.api.openUrl(link.dataset.href);
+      };
     });
 
     const previewImg = bd.querySelector(".community-detail-preview img");

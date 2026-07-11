@@ -1845,6 +1845,37 @@ body.platform-darwin .community-sticky {
 .community-detail-separator {
     color: var(--text-faint);
 }
+.community-detail-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 2px;
+}
+.detail-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    color: var(--text);
+    font: 500 12px/1 var(--f-sans);
+    cursor: pointer;
+    transition:
+        color 0.12s,
+        border-color 0.12s,
+        background 0.12s;
+}
+.detail-link:hover {
+    color: var(--text-strong);
+    border-color: var(--border-hi);
+    background: var(--bg-hover);
+}
+.detail-link-ico {
+    display: inline-flex;
+    color: var(--text-faint);
+}
 .community-detail-desc {
     margin-top: 6px;
     color: var(--text);

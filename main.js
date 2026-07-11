@@ -85,6 +85,7 @@ function shareIssuePayload(code, nameHint) {
   const body =
     `**Script Name:** ${name}\n\n` +
     `**Author:** ${meta.author || ""}\n\n` +
+    `**Contact:** _(your email, website, …)_\n\n` +
     `**Description:** ${meta.description || ""}\n\n` +
     `**Preview image:** _(drag and drop a 16:9 preview image here)_\n\n` +
     `**Version:** ${meta.version || ""}\n\n` +
