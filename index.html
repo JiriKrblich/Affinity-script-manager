@@ -32,11 +32,6 @@
         <nav class="nav" id="nav"></nav>
 
         <div class="sidebar-footer">
-          <div class="sb-drop" id="sb-drop">
-            <span class="drop-ico" id="drop-ico"></span>
-            <div class="drop-title">Drop <span class="drop-dot-js">.js</span> files here</div>
-            <div class="drop-sub">or use the button below</div>
-          </div>
           <button class="accent-btn" id="btn-open-upload" style="width:100%">
             <span class="ico" id="ico-upload"></span> Add Script
           </button>
@@ -44,6 +39,14 @@
       </aside>
 
       <main class="main" id="main"></main>
+    </div>
+
+    <div class="drag-overlay" id="drag-overlay" hidden>
+      <div class="drag-overlay-inner">
+        <span class="drag-overlay-ico" id="drag-overlay-ico"></span>
+        <div class="drag-overlay-title">Drop <span class="drop-dot-js">.js</span> files to add</div>
+        <div class="drag-overlay-sub">You'll choose to save or install after dropping</div>
+      </div>
     </div>
   </div>
 

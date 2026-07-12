@@ -13,13 +13,20 @@ contextBridge.exposeInMainWorld('api', {
 
   // --- MCP Cloud ---
   listMcpScripts: () => ipcRenderer.invoke('list-mcp-scripts'),
+  executeScript: (code) => ipcRenderer.invoke('execute-script', code),
+  runCommunityScript: (downloadUrl) => ipcRenderer.invoke('run-community-script', downloadUrl),
+  renderActivePreview: () => ipcRenderer.invoke('render-active-preview'),
   saveScript: (title, description, code) => ipcRenderer.invoke('save-script', title, description, code),
   downloadFromMcp: (mcpTitle, localName) => ipcRenderer.invoke('download-from-mcp', mcpTitle, localName),
+  exportMcpToDisk: (mcpTitle) => ipcRenderer.invoke('export-mcp-to-disk', mcpTitle),
+  readMcpMetadata: (mcpTitle) => ipcRenderer.invoke('read-mcp-metadata', mcpTitle),
+  buildShareIssue: (filename) => ipcRenderer.invoke('build-share-issue', filename),
+  buildShareIssueMcp: (mcpTitle) => ipcRenderer.invoke('build-share-issue-mcp', mcpTitle),
+  getFavorites: () => ipcRenderer.invoke('get-favorites'),
+  toggleFavorite: (stem) => ipcRenderer.invoke('toggle-favorite', stem),
 
   // --- Komunitní Marketplace ---
   listCommunityScripts: () => ipcRenderer.invoke('list-community-scripts'),
-  getCommunityFavorites: () => ipcRenderer.invoke('get-community-favorites'),
-  toggleCommunityFavorite: (favorite) => ipcRenderer.invoke('toggle-community-favorite', favorite),
   downloadCommunityScript: (url, filename, metadata) => ipcRenderer.invoke('download-community-script', url, filename, metadata),
   saveCommunityScript:     (url, filename, metadata) => ipcRenderer.invoke('save-community-script',     url, filename, metadata),
   openExternalRepo: () => ipcRenderer.send('open-external-repo'),

@@ -270,15 +270,18 @@ body {
     opacity: 0.4;
     cursor: default;
 }
+/* Single "active/glowing" style; colour comes from variables so a variant only
+   overrides the colour, never the glow itself. */
 .install-dot.on {
-    background: var(--accent);
-    box-shadow: 0 0 0 3px var(--accent-glow);
+    background: var(--dot-color, var(--accent));
+    box-shadow: 0 0 0 3px var(--dot-glow, var(--accent-glow));
     cursor: default;
 }
-/* Hovering anywhere on the row previews the install action: a paused dot previews green */
-.table-row:not(.header):hover .install-dot:not(.on):not(:disabled) {
-    background: var(--accent);
-    box-shadow: 0 0 0 3px var(--accent-glow);
+/* Active in Affinity but not in the local library (Just in Affinity tab) —
+   same .install-dot.on glow, blue colour only. */
+.install-dot.affinity {
+    --dot-color: #4a9eff;
+    --dot-glow: rgba(74, 158, 255, 0.22);
 }
 .install-dot:not(.on):not(:disabled):active {
     transform: scale(0.92);
@@ -629,56 +632,10 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
     opacity: 1;
 }
 
-/* Drag-and-drop zone above Add Script button */
-.sb-drop {
-    border: 1.5px dashed var(--border-hi);
-    border-radius: var(--r-md);
-    padding: 14px 10px;
-    text-align: center;
-    color: var(--text-dim);
-    transition:
-        background 0.12s,
-        border-color 0.12s,
-        color 0.12s;
-    user-select: none;
-}
-.sb-drop:hover {
-    border-color: var(--text-faint);
-    color: var(--text);
-}
-.sb-drop .drop-ico {
-    display: inline-block;
-    margin-bottom: 6px;
-    color: var(--text-faint);
-    transition: color 0.12s;
-}
-.sb-drop .drop-title {
-    font: 600 12px/1.3 var(--f-sans);
-    color: var(--text);
-}
-.sb-drop .drop-dot-js {
+/* Accent ".js" highlight used in the drag overlay title. */
+.drop-dot-js {
     color: var(--accent);
     font-weight: 600;
-}
-.sb-drop .drop-sub {
-    font: 400 10px/1.3 var(--f-sans);
-    color: var(--text-faint);
-    margin-top: 3px;
-}
-.sb-drop.dragover {
-    background: var(--accent-dim);
-    border-color: var(--accent);
-    border-style: solid;
-    color: var(--accent);
-}
-.sb-drop.dragover .drop-ico {
-    color: var(--accent);
-}
-.sb-drop.dragover .drop-title {
-    color: var(--accent);
-}
-.sb-drop.dragover .drop-sub {
-    color: rgba(167, 241, 117, 0.7);
 }
 
 /* ---------- Main content ---------- */
@@ -696,7 +653,9 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
 }
 .screen {
     padding: 32px 36px 36px;
-    max-width: 1500px;
+    /* No width cap: the app fills the whole window (the community grid auto-fills
+       extra columns on wide displays). Text-heavy readers keep their own inner cap. */
+    width: 100%;
 }
 .screen h1 {
     font: 700 28px/1.2 var(--f-sans);
@@ -714,22 +673,254 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
    My Scripts — list view with state tags
    ============================================================ */
 
-.status-bar {
+/* Slim, borderless connection line (was a heavy card). */
+.local-statusline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+    font: 400 12px/1 var(--f-sans);
+    color: var(--text-dim);
+}
+.local-statusline .sl-sep {
+    color: var(--text-mute);
+}
+.local-statusline .sl-more {
+    margin-left: auto;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    font: 500 12px/1 var(--f-sans);
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: var(--r-sm);
+    transition:
+        color 0.12s,
+        background 0.12s;
+}
+.local-statusline .sl-more:hover {
+    color: var(--text-strong);
+    background: var(--bg-hover);
+}
+
+/* ---------- Run without install modal ---------- */
+.modal.run-modal {
+    max-width: 760px;
+    max-height: calc(100vh - 48px);
+}
+.run-modal .modal-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+.run-preview {
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    overflow: hidden;
+    background: var(--bg-card);
+}
+.run-preview[hidden] {
+    display: none;
+}
+.run-preview img {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+.run-console-label {
+    font: 600 11px/1 var(--f-sans);
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.run-console {
+    margin: 0;
+    max-height: 260px;
+    overflow: auto;
+    background: var(--log-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    padding: 12px 14px;
+    font:
+        400 12px/1.6 SFMono-Regular,
+        Menlo,
+        Consolas,
+        monospace;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.run-console.run-error {
+    color: var(--danger-text);
+}
+
+/* ---------- Share to community modal ---------- */
+.share-steps {
+    margin: 4px 0 0;
+    padding-left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    color: var(--text);
+    font: 400 13px/1.5 var(--f-sans);
+}
+.share-steps li {
+    padding-left: 4px;
+}
+.share-steps strong {
+    color: var(--text-strong);
+}
+.share-steps kbd,
+.share-done kbd {
+    font: 600 11px/1 var(--f-sans);
+    color: var(--text-strong);
+    background: var(--bg-card-hi);
+    border: 1px solid var(--border-hi);
+    border-radius: var(--r-sm);
+    padding: 2px 6px;
+    white-space: nowrap;
+}
+.share-done {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+}
+.share-done-ico {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #0f1208;
+    font: 700 14px/24px var(--f-sans);
+    text-align: center;
+}
+.share-done p {
+    margin: 0;
+    color: var(--text);
+    font: 400 13px/1.6 var(--f-sans);
+}
+.share-done strong {
+    color: var(--text-strong);
+}
+
+/* ---------- Update explanation modal ---------- */
+.update-illustration {
+    width: 100%;
+    height: auto;
+    display: block;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+}
+.update-ver-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font: 600 15px/1 var(--f-sans);
+}
+.update-note {
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-border);
+    border-radius: var(--r-md);
+    padding: 12px 14px;
+}
+.update-note-title {
+    font: 600 12px/1.3 var(--f-sans);
+    color: var(--warn);
+    margin-bottom: 4px;
+}
+.update-note p {
+    margin: 0;
+    color: var(--text) !important;
+}
+
+/* ---------- Updates-available panel (top of My Scripts) ---------- */
+.updates-panel {
+    margin-bottom: 16px;
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-border);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+}
+.updates-panel[hidden] {
+    display: none;
+}
+.updates-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    padding: 11px 16px;
-    font: 400 13px/1 var(--f-sans);
-    color: var(--text);
-    margin-bottom: 16px;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--warn-border);
 }
-.status-bar .left {
+.updates-title {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
+    font: 600 13px/1 var(--f-sans);
+    color: var(--warn);
+}
+.updates-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 10px;
+    background: var(--warn);
+    color: #1c1204;
+    font: 700 11px/1 var(--f-sans);
+}
+.updates-list {
+    display: flex;
+    flex-direction: column;
+}
+.updates-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border-top: 1px solid var(--hair);
+}
+.updates-row:first-child {
+    border-top: none;
+}
+.updates-name {
+    flex: 1;
+    min-width: 0;
+    font: 500 13px/1.3 var(--f-sans);
+    color: var(--text-strong);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.updates-name .row-ext {
+    color: var(--text-faint);
+}
+.updates-ver {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font: 500 12px/1 var(--f-sans);
+    flex-shrink: 0;
+}
+.updates-ver-old {
+    color: var(--text-faint);
+    text-decoration: line-through;
+}
+.updates-ver-arrow {
+    color: var(--text-faint);
+}
+.updates-ver-new {
+    color: var(--warn);
+    font-weight: 600;
+}
+.updates-btn {
+    flex-shrink: 0;
+}
+#local-tabs {
+    margin-bottom: 20px;
 }
 
 .table {
@@ -740,7 +931,7 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
 }
 .table-row {
     display: grid;
-    grid-template-columns: 36px minmax(220px, 3fr) 130px 100px 120px;
+    grid-template-columns: 36px minmax(220px, 3fr) 130px 100px 160px;
     gap: 14px;
     padding: 12px 16px;
     align-items: center;
@@ -767,10 +958,49 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
     display: flex;
     gap: 4px;
 }
+/* "Just in Affinity" tab: Status | Name | Actions (no Modified/Size). */
+.affinity-table .table-row {
+    grid-template-columns: 36px minmax(220px, 1fr) auto;
+}
+.affinity-table .table-row .actions {
+    margin-right: 8px;
+}
 
 .row-name {
     font: 600 14px/1.3 var(--f-sans);
     color: var(--text-strong);
+}
+.row-name-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.row-fav {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: var(--r-sm);
+    color: var(--text-mute);
+    cursor: pointer;
+    transition:
+        color 0.12s,
+        background 0.12s;
+}
+.row-fav:hover {
+    color: var(--text-dim);
+    background: var(--bg-hover);
+}
+.row-fav.active {
+    color: var(--warn);
+}
+.row-fav.active svg path {
+    fill: currentColor;
 }
 .row-desc {
     font: 400 12px/1.5 var(--f-sans);
@@ -789,36 +1019,62 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
 }
 
 /* ============================================================
-   Installed Scripts — host table + event log + card grid
+   Affinity connection ("More info") modal — bridge diagnostics,
+   event log, and Affinity-only orphan scripts.
    ============================================================ */
 
-.bridge-table {
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    overflow: hidden;
+.modal.bridge-modal {
+    max-width: 620px;
+    max-height: calc(100vh - 48px);
+}
+.bridge-modal .modal-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+.bridge-info {
+    display: flex;
+    flex-direction: column;
     background: var(--bg-card);
-    margin-bottom: 28px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    overflow: hidden;
 }
-.bridge-row {
-    display: grid;
-    grid-template-columns: 1.4fr 2fr 0.8fr 0.8fr 1fr 120px;
-    gap: 14px;
-    padding: 14px 18px;
+.bridge-info-row {
+    display: flex;
+    justify-content: space-between;
     align-items: center;
+    padding: 10px 14px;
     border-top: 1px solid var(--hair);
+    font: 400 13px/1 var(--f-sans);
 }
-.bridge-row:first-child {
+.bridge-info-row:first-child {
     border-top: none;
 }
-.bridge-row.header {
-    background: var(--bg-card);
-    padding: 9px 18px;
+.bridge-info-row .k {
+    color: var(--text-dim);
 }
-.bridge-row.header .col {
-    font: 600 11px/1 var(--f-sans);
+.bridge-info-row .v {
+    color: var(--text-strong);
+    font-variant-numeric: tabular-nums;
+}
+.bm-status-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    text-transform: capitalize;
+}
+.bridge-section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+.bridge-empty {
+    grid-column: 1 / -1;
     color: var(--text-faint);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    font: 400 12px/1.4 var(--f-sans);
+    padding: 8px 0;
 }
 
 .event-log {
@@ -896,53 +1152,23 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
     margin-top: 0;
 }
 
-.card-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 14px;
-    margin-top: 14px;
-}
-.card {
-    background: var(--bg-chrome);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    padding: 18px;
-    display: flex;
-    flex-direction: column;
-    transition:
-        border-color 0.12s,
-        background 0.12s;
-}
-.card:hover {
-    border-color: var(--border-hi);
-    background: var(--bg-chrome-hi);
-}
-.card-title {
-    font: 600 15px/1.3 var(--f-sans);
-    color: var(--text-strong);
-    margin-bottom: 6px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.section-title {
-    font: 600 18px/1.3 var(--f-sans);
-    color: var(--text-strong);
-    margin: 32px 0 10px;
-}
-
 /* ============================================================
    Community screen
    ============================================================ */
 
+.community-head {
+    margin-bottom: 20px;
+}
+/* Only the search bar + category tabs stay pinned; the header and the featured
+   carousel above scroll away with the page. Horizontal bleed keeps the pinned
+   background full-width so scrolled content doesn't peek beside it. */
 .community-sticky {
     position: sticky;
     top: 0;
     z-index: 25;
     background: var(--bg-app);
-    margin: -32px -36px 20px;
-    padding: 32px 36px 0;
+    margin: 0 -36px 20px;
+    padding: 16px 36px 0;
 }
 body.platform-darwin .community-sticky {
     top: 0;
@@ -1064,6 +1290,315 @@ body.platform-darwin .community-sticky {
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 14px;
 }
+
+/* ---------- Skeleton loading (community cards, My Scripts rows, bridge cards) ---------- */
+.c-skeleton {
+    pointer-events: none;
+    cursor: default;
+}
+.sk {
+    background: linear-gradient(
+        90deg,
+        var(--bg-card) 25%,
+        var(--bg-card-hi) 37%,
+        var(--bg-card) 63%
+    );
+    background-size: 400% 100%;
+    animation: sk-shimmer 1.4s ease infinite;
+    border-radius: var(--r-sm);
+}
+@keyframes sk-shimmer {
+    0% {
+        background-position: 100% 0;
+    }
+    100% {
+        background-position: 0 0;
+    }
+}
+.sk-preview {
+    margin: -20px -20px 16px;
+    aspect-ratio: 16 / 9;
+    border-radius: 0;
+}
+.sk-title {
+    height: 15px;
+    width: 60%;
+    margin-bottom: 12px;
+}
+.sk-text {
+    height: 12px;
+    width: 100%;
+    margin-bottom: 8px;
+}
+.sk-text-short {
+    width: 45%;
+}
+.sk-foot {
+    height: 30px;
+    width: 100%;
+    margin-top: 14px;
+    border-radius: var(--r-md);
+}
+@media (prefers-reduced-motion: reduce) {
+    .sk {
+        animation: none;
+    }
+}
+
+/* ---------- Community load errors ---------- */
+.community-errors {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+.community-errors[hidden] {
+    display: none;
+}
+.community-error {
+    display: flex;
+    gap: 12px;
+    padding: 14px 16px;
+    background: var(--danger-bg);
+    border: 1px solid var(--danger-border);
+    border-radius: var(--r-lg);
+}
+.community-error-ico {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--danger);
+    color: #fff;
+    font: 700 14px/22px var(--f-sans);
+    text-align: center;
+}
+.community-error-text {
+    min-width: 0;
+}
+.community-error-title {
+    font: 600 13px/1.3 var(--f-sans);
+    color: var(--danger-text);
+    margin-bottom: 3px;
+}
+.community-error-body {
+    font: 400 13px/1.5 var(--f-sans);
+    color: var(--text);
+}
+.community-error-url {
+    margin-top: 8px;
+    font: 400 11px/1.4 var(--f-sans);
+    color: var(--text-dim);
+    word-break: break-all;
+}
+.community-error-detail {
+    margin-top: 4px;
+    padding: 6px 8px;
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: var(--r-sm);
+    font: 400 11px/1.45 var(--f-sans);
+    color: var(--text-faint);
+    word-break: break-word;
+}
+
+/* ---------- Featured carousel (first full-width row inside the grid) ---------- */
+.community-carousel {
+    grid-column: 1 / -1;
+    margin-bottom: 6px;
+}
+.community-carousel[hidden] {
+    display: none;
+}
+.cc-viewport {
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+}
+.cc-track {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+}
+.cc-track::-webkit-scrollbar {
+    display: none;
+}
+.cc-slide {
+    flex: 0 0 100%;
+    scroll-snap-align: start;
+    display: flex;
+    min-height: 250px;
+    background: var(--bg-chrome);
+    cursor: pointer;
+}
+.cc-media {
+    position: relative;
+    flex: 0 0 48%;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background:
+        linear-gradient(45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%),
+        var(--bg-card);
+    background-position:
+        0 0,
+        0 8px,
+        8px -8px,
+        -8px 0;
+    background-size: 16px 16px;
+}
+.cc-media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+/* Soft fade from the preview into the body so the split isn't a hard line. */
+.cc-media::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(90deg, transparent 62%, var(--bg-chrome));
+}
+.cc-media-ph {
+    color: var(--text-faint);
+    font: 500 12px/1 var(--f-sans);
+    position: relative;
+    z-index: 1;
+}
+.cc-body {
+    flex: 1;
+    min-width: 0;
+    padding: 28px 32px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 7px;
+}
+.cc-eyebrow {
+    font: 600 10px/1 var(--f-sans);
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: var(--accent);
+}
+.cc-body h3 {
+    margin: 0;
+    font: 700 22px/1.2 var(--f-sans);
+    color: var(--text-strong);
+    letter-spacing: -0.3px;
+}
+.cc-author {
+    font: 400 13px/1 var(--f-sans);
+    color: var(--text-dim);
+}
+.cc-desc {
+    margin: 4px 0 0;
+    font: 400 14px/1.6 var(--f-sans);
+    color: var(--text);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.cc-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+}
+.cc-install.installed {
+    background: var(--bg-hover);
+    color: var(--text-faint);
+    cursor: default;
+}
+.cc-install.update {
+    background: var(--warn);
+    color: #1c1204;
+}
+.cc-arrow {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(0, 0, 0, 0.42);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: #fff;
+    cursor: pointer;
+    z-index: 2;
+    opacity: 0;
+    transition:
+        opacity 0.16s,
+        background 0.12s;
+}
+/* Arrows stay out of the way until the user hovers the carousel. */
+.cc-viewport:hover .cc-arrow:not([hidden]) {
+    opacity: 1;
+}
+.cc-arrow:hover {
+    background: rgba(0, 0, 0, 0.7);
+    color: #fff;
+}
+.cc-prev {
+    left: 14px;
+}
+.cc-next {
+    right: 14px;
+}
+.cc-arrow[hidden] {
+    display: none;
+}
+.cc-dots {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 14px;
+}
+.cc-dots[hidden] {
+    display: none;
+}
+.cc-dot {
+    width: 7px;
+    height: 7px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: var(--text-mute);
+    cursor: pointer;
+    transition:
+        background 0.16s,
+        width 0.16s;
+}
+.cc-dot:hover {
+    background: var(--text-faint);
+}
+.cc-dot.active {
+    width: 20px;
+    background: var(--accent);
+}
+@media (max-width: 720px) {
+    .cc-slide {
+        flex-direction: column;
+        min-height: 0;
+    }
+    .cc-media {
+        flex: none;
+        aspect-ratio: 16 / 9;
+    }
+}
 .c-card {
     position: relative;
     background: var(--bg-chrome);
@@ -1073,9 +1608,43 @@ body.platform-darwin .community-sticky {
     display: flex;
     flex-direction: column;
     cursor: pointer;
+    overflow: hidden;
     transition:
         border-color 0.12s,
         background 0.12s;
+}
+/* Full-bleed 16:9 thumbnail at the top of the card. Negative margins pull it out
+   to the card edges; the card's overflow:hidden clips it to the rounded corners. */
+.c-card .c-card-preview {
+    margin: -20px -20px 16px;
+    aspect-ratio: 16 / 9;
+    background:
+        linear-gradient(45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%),
+        var(--bg-card);
+    background-position:
+        0 0,
+        0 8px,
+        8px -8px,
+        -8px 0;
+    background-size: 16px 16px;
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.c-card .c-card-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.c-card .c-card-preview-ph {
+    color: var(--text-faint);
+    font: 500 11px/1 var(--f-sans);
 }
 .c-card:hover {
     border-color: var(--border-hi);
@@ -1092,6 +1661,20 @@ body.platform-darwin .community-sticky {
     display: inline-flex;
     align-items: center;
     gap: 4px;
+    flex-shrink: 0;
+}
+/* Featured pill — shown on cards and in the detail modal for repo-curated picks. */
+.c-featured-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 9px;
+    border-radius: var(--r-sm);
+    font: 600 10px/1 var(--f-sans);
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: var(--accent-dim);
+    border: 1px solid rgba(167, 241, 117, 0.25);
     flex-shrink: 0;
 }
 .c-card .c-favorite {
@@ -1119,6 +1702,12 @@ body.platform-darwin .community-sticky {
     color: var(--text);
     margin-bottom: 16px;
     flex: 1;
+    /* Truncate to 3 lines on the card; the full text lives in the detail modal. */
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
 }
 .c-card .foot {
     display: flex;
@@ -1145,22 +1734,60 @@ body.platform-darwin .community-sticky {
     background: var(--text-strong);
     color: var(--bg-chrome);
 }
-.c-card .install-btn.installed {
-    background: var(--accent-dim);
-    border-color: rgba(167, 241, 117, 0.25);
-    color: var(--accent);
+.c-card .install-btn.installed,
+.c-card .install-btn.installed:hover {
+    background: var(--bg-hover);
+    border-color: var(--border);
+    color: var(--text-faint);
     cursor: default;
 }
-
-.community-detail-modal {
-    max-width: 720px;
+.c-card .install-btn.update {
+    background: var(--warn);
+    border-color: var(--warn);
+    color: #1c1204;
 }
-.community-detail-body {
-    gap: 18px;
+.c-card .install-btn.update:hover {
+    background: #ffbe52;
+    border-color: #ffbe52;
+    color: #1c1204;
+}
+
+/* .modal.community-detail-modal (two classes) so this wins over the later,
+   equal-specificity `.modal { max-width: 460px }` rule regardless of order. */
+.modal.community-detail-modal {
+    position: relative;
+    max-width: 700px;
+    max-height: calc(100vh - 24px);
+}
+/* Scroll region: preview + content scroll together while the footer stays pinned. */
+.community-detail-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+/* Floating close button over the hero preview. */
+.community-detail-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    z-index: 3;
+    width: 32px;
+    height: 32px;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+}
+.community-detail-close:hover {
+    background: rgba(0, 0, 0, 0.68);
+    color: #fff;
 }
 .community-detail-preview {
     width: 100%;
     aspect-ratio: 16 / 9;
+    flex-shrink: 0;
     background:
         linear-gradient(45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
         linear-gradient(-45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
@@ -1173,8 +1800,7 @@ body.platform-darwin .community-sticky {
         8px -8px,
         -8px 0;
     background-size: 16px 16px;
-    border: 1px solid var(--border);
-    border-radius: var(--r-md);
+    border-bottom: 1px solid var(--border);
     overflow: hidden;
     display: flex;
     align-items: center;
@@ -1188,17 +1814,25 @@ body.platform-darwin .community-sticky {
 }
 .community-detail-placeholder {
     color: var(--text-faint);
-    font: 500 12px/1 var(--f-sans);
+    font: 500 13px/1 var(--f-sans);
+}
+/* Text content below the hero. */
+.community-detail-content {
+    padding: 24px 28px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
 }
 .community-detail-meta {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
 }
-.community-detail-body h2 {
-    margin: 0 0 6px;
+.community-detail-content h2 {
+    margin: 2px 0 0;
     color: var(--text-strong);
-    font: 600 22px/1.15 var(--f-sans);
+    font: 600 24px/1.2 var(--f-sans);
+    letter-spacing: -0.3px;
 }
 .community-detail-author {
     display: flex;
@@ -1206,13 +1840,56 @@ body.platform-darwin .community-sticky {
     gap: 6px;
     align-items: center;
     color: var(--text-dim);
-    font: 400 12px/1.35 var(--f-sans);
+    font: 400 13px/1.4 var(--f-sans);
 }
 .community-detail-separator {
     color: var(--text-faint);
 }
+.community-detail-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 2px;
+}
+.detail-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    color: var(--text);
+    font: 500 12px/1 var(--f-sans);
+    cursor: pointer;
+    transition:
+        color 0.12s,
+        border-color 0.12s,
+        background 0.12s;
+}
+.detail-link:hover {
+    color: var(--text-strong);
+    border-color: var(--border-hi);
+    background: var(--bg-hover);
+}
+.detail-link-ico {
+    display: inline-flex;
+    color: var(--text-faint);
+}
+.community-detail-desc {
+    margin-top: 6px;
+    color: var(--text);
+    font: 400 14px/1.65 var(--f-sans);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.community-detail-desc-empty {
+    color: var(--text-faint);
+    font-style: italic;
+}
 .community-detail-actions {
     justify-content: space-between;
+    flex-shrink: 0;
 }
 .community-detail-actions .gh-btn.active {
     color: var(--warn);
@@ -1221,9 +1898,13 @@ body.platform-darwin .community-sticky {
     fill: currentColor;
 }
 .community-detail-actions .accent-btn.installed {
-    background: var(--accent-dim);
-    color: var(--accent);
+    background: var(--bg-hover);
+    color: var(--text-faint);
     cursor: default;
+}
+.community-detail-actions .accent-btn.update {
+    background: var(--warn);
+    color: #1c1204;
 }
 
 /* ============================================================
@@ -1337,6 +2018,51 @@ body.platform-darwin .community-sticky {
 /* ============================================================
    Modals
    ============================================================ */
+
+/* Full-window drag overlay shown while dragging .js files over the window. */
+.drag-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    background: rgba(15, 16, 20, 0.72);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+.drag-overlay[hidden] {
+    display: none;
+}
+.drag-overlay-inner {
+    pointer-events: none;
+    width: 100%;
+    height: 100%;
+    max-width: 680px;
+    max-height: 420px;
+    border: 2px dashed var(--accent);
+    border-radius: var(--r-xl);
+    background: var(--accent-dim);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    text-align: center;
+}
+.drag-overlay-ico {
+    color: var(--accent);
+    margin-bottom: 6px;
+}
+.drag-overlay-title {
+    font: 700 21px/1.2 var(--f-sans);
+    color: var(--text-strong);
+}
+.drag-overlay-sub {
+    font: 400 13px/1.4 var(--f-sans);
+    color: var(--text-dim);
+}
 
 .modal-backdrop {
     position: fixed;
@@ -1558,9 +2284,6 @@ body.platform-darwin .community-sticky {
     border-top: 1px solid var(--hair);
     cursor: pointer;
     transition: background 0.1s;
-}
-.dev-row.community {
-    grid-template-columns: 20px minmax(220px, 1fr) 130px;
 }
 .dev-row:first-child {
     border-top: none;

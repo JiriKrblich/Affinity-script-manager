@@ -10,6 +10,8 @@ const { CallToolResultSchema } = require("@modelcontextprotocol/sdk/types.js");
 const SERVER_URL = "http://localhost:6767/sse";
 const DEFAULT_REPO =
   "https://raw.githubusercontent.com/JiriKrblich/Affinity-Community-Scripts/refs/heads/main/registry.json";
+const COMMUNITY_ISSUES_URL =
+  "https://github.com/JiriKrblich/Affinity-Community-Scripts/issues/new";
 
 let client;
 let transport;
@@ -28,6 +30,17 @@ function getTextContent(result) {
     .join("\n");
 }
 
+// A render_* tool returns a base64 JPEG — either as an image content item or as
+// text. Normalize both to a data: URL the renderer can drop into an <img>.
+function getImageDataUrl(result) {
+  const items = (result && result.content) || [];
+  const img = items.find((i) => i && i.type === "image" && i.data);
+  if (img) return `data:${img.mimeType || "image/jpeg"};base64,${img.data}`;
+  const text = getTextContent(result).trim();
+  if (!text) return "";
+  return text.startsWith("data:") ? text : `data:image/jpeg;base64,${text}`;
+}
+
 function parseCsvTextContent(result) {
   const textChunks = (result.content || [])
     .filter((i) => i && i.type === "text")
@@ -43,12 +56,99 @@ function parseCsvTextContent(result) {
   ];
 }
 
+// GitHub's raw CDN (raw.githubusercontent.com) caches files for ~5 minutes, so a
+// freshly pushed registry.json / script can otherwise look stale when the app is
+// reopened. Bust the edge cache with a unique query param + no-cache headers so we
+// always pull the latest. Callers keep the clean URL for anything else (asset
+// resolution, _source), passing it here only at the fetch call site.
+function fetchFresh(url, options = {}) {
+  const sep = url.includes("?") ? "&" : "?";
+  const bustedUrl = `${url}${sep}_cb=${Date.now()}`;
+  return fetch(bustedUrl, {
+    cache: "no-store",
+    ...options,
+    headers: {
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
+      ...(options.headers || {}),
+    },
+  });
+}
+
+// Build a GitHub "new issue" URL whose body mirrors the community repo's
+// contribute-script template fields (Script Name / Author / Description /
+// Preview image / Version / Code), pre-filled from the script's metadata.
+function shareIssuePayload(code, nameHint) {
+  const meta = parseScriptMetadata(code, nameHint);
+  const name = meta.name || nameHint;
+  const title = `New script: ${name}`;
+  const body =
+    `**Script Name:** ${name}\n\n` +
+    `**Author:** ${meta.author || ""}\n\n` +
+    `**Contact:** _(your email, website, …)_\n\n` +
+    `**Description:** ${meta.description || ""}\n\n` +
+    `**Preview image:** _(drag and drop a 16:9 preview image here)_\n\n` +
+    `**Version:** ${meta.version || ""}\n\n` +
+    "**Code:**\n\n```js\n" +
+    code +
+    "\n```\n";
+  const baseUrl = `${COMMUNITY_ISSUES_URL}?title=${encodeURIComponent(title)}`;
+  const url = `${baseUrl}&body=${encodeURIComponent(body)}`;
+  return { url, baseUrl, body, tooLong: url.length > 7000 };
+}
+
 function resolveCommunityAssetUrl(registryUrl, assetUrl) {
   if (!assetUrl) return "";
   try {
     return new URL(assetUrl, registryUrl).toString();
   } catch {
     return assetUrl;
+  }
+}
+
+// Resolve a file sitting next to registry.json in the same repo folder, e.g.
+// ".../main/registry.json" + "featured.json" -> ".../main/featured.json".
+function deriveRepoFileUrl(registryUrl, filename) {
+  try {
+    return new URL(filename, registryUrl).toString();
+  } catch {
+    return "";
+  }
+}
+
+// Normalize the many shapes a featured.json may take into a Set of script ids:
+//   ["id1", "id2"]
+//   { "featured": ["id1", "id2"] }
+//   { "featured": [{ "id": "id1" }, ...] }
+function parseFeaturedIds(data) {
+  const list = Array.isArray(data)
+    ? data
+    : data && Array.isArray(data.featured)
+      ? data.featured
+      : [];
+  const ids = new Set();
+  for (const entry of list) {
+    if (typeof entry === "string") {
+      ids.add(entry.trim());
+    } else if (entry && typeof entry === "object" && entry.id) {
+      ids.add(String(entry.id).trim());
+    }
+  }
+  ids.delete("");
+  return ids;
+}
+
+// Best-effort fetch of a repo's featured.json. Missing/invalid file is not an
+// error — featured is an optional, additive layer on top of registry.json.
+async function fetchFeaturedIds(registryUrl) {
+  const featuredUrl = deriveRepoFileUrl(registryUrl, "featured.json");
+  if (!featuredUrl) return new Set();
+  try {
+    const res = await fetchFresh(featuredUrl);
+    if (!res.ok) return new Set();
+    return parseFeaturedIds(await res.json());
+  } catch {
+    return new Set();
   }
 }
 
@@ -225,11 +325,20 @@ async function getConfig() {
     needsSave = true;
   }
 
-  if (
-    !config.favoriteCommunityScripts ||
-    !Array.isArray(config.favoriteCommunityScripts)
-  ) {
-    config.favoriteCommunityScripts = [];
+  // Unified favorites keyed by script stem — shared by My Scripts and Community
+  // (favoriting a community script marks its local copy, and vice versa).
+  if (!config.favoriteScripts || !Array.isArray(config.favoriteScripts)) {
+    const migrated = Array.isArray(config.favoriteLocalScripts)
+      ? config.favoriteLocalScripts.map((f) =>
+          String(f).replace(/\.js$/i, "").toLowerCase(),
+        )
+      : [];
+    config.favoriteScripts = [...new Set(migrated)];
+    needsSave = true;
+  }
+  if (config.favoriteCommunityScripts || config.favoriteLocalScripts) {
+    delete config.favoriteCommunityScripts;
+    delete config.favoriteLocalScripts;
     needsSave = true;
   }
 
@@ -498,8 +607,59 @@ app.whenReady().then(async () => {
     }
   });
 
-  // "Add Script" — writes to disk only. Does NOT push to MCP: installation is an explicit
-  // action via the install dot on the My Scripts row.
+  // Run a script in Affinity directly (without installing it to the library).
+  // Scripts don't return values — they log via console.log — so `output` is the
+  // captured console text.
+  ipcMain.handle("execute-script", async (event, code) => {
+    try {
+      const result = await callTool(client, "execute_script", { script: code });
+      return { success: true, output: getTextContent(result) };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Fetch a community script by its raw URL and run it in Affinity without
+  // installing ("Run without install" from the community detail popup).
+  ipcMain.handle("run-community-script", async (event, downloadUrl) => {
+    try {
+      const response = await fetchFresh(downloadUrl);
+      if (!response.ok) throw new Error("Couldn't download the script.");
+      const code = await response.text();
+      const result = await callTool(client, "execute_script", { script: code });
+      return { success: true, output: getTextContent(result) };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Render the active document's first spread to a JPEG so the run result can be
+  // previewed inline. Needs the document's sessionUuid, which we read via a tiny
+  // helper script.
+  ipcMain.handle("render-active-preview", async () => {
+    try {
+      const uuidRes = await callTool(client, "execute_script", {
+        script:
+          "const { Document } = require('/document'); console.log(Document.current.sessionUuid);",
+      });
+      const uuid = getTextContent(uuidRes).trim();
+      if (!uuid)
+        return { success: false, error: "No active document to preview." };
+      const render = await callTool(client, "render_spread", {
+        document_session_uuid: uuid,
+        spread_index: 0,
+      });
+      const image = getImageDataUrl(render);
+      if (!image) return { success: false, error: "Nothing was rendered." };
+      return { success: true, image };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // "Add Script" — saves to disk and auto-installs into Affinity via the bridge.
+  // The local save is authoritative; pushing to the bridge is best-effort so an
+  // offline bridge still saves the file (reported via `pushed`/`pushError`).
   ipcMain.handle("save-script", async (event, title, description, code) => {
     try {
       const safeFilename =
@@ -513,7 +673,20 @@ app.whenReady().then(async () => {
         codeWithMetadata,
         "utf8",
       );
-      return { success: true };
+
+      let pushed = false;
+      let pushError = null;
+      try {
+        await callTool(client, "save_script_to_library", {
+          title,
+          description,
+          code: codeWithMetadata,
+        });
+        pushed = true;
+      } catch (err) {
+        pushError = err && err.message ? err.message : String(err);
+      }
+      return { success: true, pushed, pushError };
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -533,6 +706,73 @@ app.whenReady().then(async () => {
         code,
         "utf8",
       );
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Build a pre-filled "contribute this script" GitHub issue for a local script.
+  // Auth + commit happen on github.com; the app never touches a token. Long
+  // scripts overflow the URL, so we also return the body for a clipboard fallback.
+  ipcMain.handle("build-share-issue", async (event, filename) => {
+    try {
+      assertLocalScriptFilename(filename);
+      const code = await fs.readFile(
+        path.join(localScriptsDir, filename),
+        "utf8",
+      );
+      return { success: true, ...shareIssuePayload(code, path.parse(filename).name) };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Same, but for a script that lives only in Affinity (Just in Affinity tab).
+  ipcMain.handle("build-share-issue-mcp", async (event, mcpTitle) => {
+    try {
+      const result = await callTool(client, "read_library_script", {
+        title: mcpTitle,
+      });
+      const code = getTextContent(result);
+      if (!code) return { success: false, error: "Empty script." };
+      return { success: true, ...shareIssuePayload(code, mcpTitle) };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Read a script from the Affinity library and return its parsed metadata
+  // (name/description/…). The bridge list only exposes titles, so this is how the
+  // "Just in Affinity" rows get a description.
+  ipcMain.handle("read-mcp-metadata", async (event, mcpTitle) => {
+    try {
+      const result = await callTool(client, "read_library_script", {
+        title: mcpTitle,
+      });
+      const code = getTextContent(result);
+      return { success: true, data: parseScriptMetadata(code, mcpTitle) };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Read a script from the Affinity library and save it to an arbitrary folder
+  // via the native save dialog (used by "Download to folder" for orphan scripts).
+  ipcMain.handle("export-mcp-to-disk", async (event, mcpTitle) => {
+    try {
+      const result = await callTool(client, "read_library_script", {
+        title: mcpTitle,
+      });
+      const code = getTextContent(result);
+      if (!code) return { success: false, error: "Empty script." };
+      const safeName =
+        String(mcpTitle).toLowerCase().replace(/[^a-z0-9_-]/g, "-") + ".js";
+      const { canceled, filePath } = await dialog.showSaveDialog(win, {
+        defaultPath: safeName,
+      });
+      if (canceled || !filePath) return { success: false, error: "Cancelled" };
+      await fs.writeFile(filePath, code, "utf8");
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -602,67 +842,97 @@ app.whenReady().then(async () => {
       const config = await getConfig();
       let allScripts = [];
       let communityOrder = 0;
+      // Per-repo failures, distinguished by cause so the UI can explain *why*:
+      //   unreachable  — network/DNS/connection error (fetch threw)
+      //   unavailable  — reached the server but got a non-OK HTTP status (e.g. 404)
+      //   invalid-json — downloaded but the body is not valid JSON (bad syntax)
+      const repoErrors = [];
 
       for (const url of config.repositories) {
+        const isDefault = url === DEFAULT_REPO;
+
+        let response;
         try {
-          const response = await fetch(url);
-          if (response.ok) {
-            const registry = await response.json();
-            const scriptsWithSource = (registry.scripts || []).map((script) => ({
-              ...script,
-              _source: url,
-              _imageUrl: resolveCommunityAssetUrl(
-                url,
-                script.image ||
-                  script.image_url ||
-                  script.preview_image ||
-                  script.screenshot,
-              ),
-              _communityOrder: communityOrder++,
-            }));
-            allScripts = allScripts.concat(scriptsWithSource);
-          }
+          response = await fetchFresh(url);
         } catch (err) {
-          console.warn(`Failed to fetch repo: ${url}`);
+          repoErrors.push({
+            url,
+            isDefault,
+            reason: "unreachable",
+            detail: err && err.message ? err.message : String(err),
+          });
+          continue;
         }
+
+        if (!response.ok) {
+          repoErrors.push({
+            url,
+            isDefault,
+            reason: "unavailable",
+            detail: `HTTP ${response.status}${response.statusText ? " " + response.statusText : ""}`,
+          });
+          continue;
+        }
+
+        let registry;
+        try {
+          registry = await response.json();
+        } catch (err) {
+          repoErrors.push({
+            url,
+            isDefault,
+            reason: "invalid-json",
+            detail: err && err.message ? err.message : String(err),
+          });
+          continue;
+        }
+
+        // Featured is an optional sibling file; fetch it in parallel-safe,
+        // non-fatal fashion so a repo without featured.json still works.
+        const featuredIds = await fetchFeaturedIds(url);
+        const scriptsWithSource = (registry.scripts || []).map((script) => ({
+          ...script,
+          _source: url,
+          _featured: featuredIds.has(script.id),
+          _imageUrl: resolveCommunityAssetUrl(
+            url,
+            script.image ||
+              script.image_url ||
+              script.preview_image ||
+              script.screenshot,
+          ),
+          _communityOrder: communityOrder++,
+        }));
+        allScripts = allScripts.concat(scriptsWithSource);
       }
-      return { success: true, data: allScripts };
+      return { success: true, data: allScripts, errors: repoErrors };
     } catch (error) {
       return { success: false, error: error.message };
     }
   });
 
-  ipcMain.handle("get-community-favorites", async () => {
+  // Unified favorites — keyed by script stem, shared across My Scripts + Community.
+  ipcMain.handle("get-favorites", async () => {
     try {
       const config = await getConfig();
-      return { success: true, data: config.favoriteCommunityScripts };
+      return { success: true, data: config.favoriteScripts };
     } catch (error) {
       return { success: false, error: error.message };
     }
   });
 
-  ipcMain.handle("toggle-community-favorite", async (event, favorite) => {
+  ipcMain.handle("toggle-favorite", async (event, stem) => {
     try {
-      if (!favorite || !favorite.repo || !favorite.id) {
-        return { success: false, error: "Missing favorite repo or id." };
-      }
-
+      const key = String(stem || "")
+        .replace(/\.js$/i, "")
+        .toLowerCase();
+      if (!key) return { success: false, error: "Missing script key." };
       const config = await getConfig();
-      const index = config.favoriteCommunityScripts.findIndex(
-        (item) => item.repo === favorite.repo && item.id === favorite.id,
-      );
-
-      if (index >= 0) {
-        config.favoriteCommunityScripts.splice(index, 1);
-      } else {
-        config.favoriteCommunityScripts.push({
-          repo: favorite.repo,
-          id: favorite.id,
-        });
-      }
-
+      const index = config.favoriteScripts.indexOf(key);
+      if (index >= 0) config.favoriteScripts.splice(index, 1);
+      else config.favoriteScripts.push(key);
       await saveConfig(config);
-      return { success: true, data: config.favoriteCommunityScripts };
+      return { success: true, data: config.favoriteScripts };
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -692,7 +962,7 @@ app.whenReady().then(async () => {
     "download-community-script",
     async (event, downloadUrl, filename, metadata = {}) => {
       try {
-        const response = await fetch(downloadUrl);
+        const response = await fetchFresh(downloadUrl);
         if (!response.ok)
           throw new Error("Error downloading file from server.");
         const code = await response.text();
@@ -735,7 +1005,7 @@ app.whenReady().then(async () => {
     "save-community-script",
     async (event, downloadUrl, filename, metadata = {}) => {
       try {
-        const response = await fetch(downloadUrl);
+        const response = await fetchFresh(downloadUrl);
         if (!response.ok)
           throw new Error("Error downloading file from server.");
         const code = await response.text();

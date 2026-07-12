@@ -1,10 +1,13 @@
 const Ico = window.Icons.createIcon;
 const state = {
   nav: "local",
+  localTab: "local", // 'local' | 'affinity' — My Scripts sub-tabs
+  localQuery: "",
   communityQuery: "",
   communityFilter: "all",
   communitySort: "name",
-  favoriteCommunityIds: new Set(),
+  // Unified favorites, keyed by script stem — shared by My Scripts + Community.
+  favorites: new Set(),
   installedIds: new Set(),
   editorFile: null,
   editorDirty: false,
@@ -15,9 +18,21 @@ const state = {
 // Live Ace editor instance (outside `state` so it's not treated as declarative UI state).
 let activeEditor = null;
 
+// Favorite key = script stem. A community script (by name) and its downloaded
+// local file (by filename) resolve to the same stem, so a favorite is shared.
+function scriptStem(nameOrFile) {
+  return String(nameOrFile || "")
+    .replace(/\.js$/i, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "-");
+}
 function communityFavoriteKey(script) {
-  if (!script || !script._source || !script.id) return "";
-  return `${script._source}::${script.id}`;
+  return scriptStem(script && script.name);
+}
+async function toggleScriptFavorite(stem) {
+  const r = await window.api.toggleFavorite(stem);
+  if (r && r.success) state.favorites = new Set(r.data);
+  return !!(r && r.success);
 }
 
 function communityPreviewUrl(script) {
@@ -51,10 +66,7 @@ function communityScriptMetadata(script) {
 const NAV_SECTIONS = [
   {
     label: "Library",
-    items: [
-      { id: "local", name: "My Scripts", icon: "folder" },
-      { id: "bridge", name: "Installed Scripts", icon: "plug" },
-    ],
+    items: [{ id: "local", name: "My Scripts", icon: "folder" }],
   },
   {
     label: "Discover",
@@ -152,7 +164,6 @@ async function renderScreen() {
   main.scrollTop = 0;
   const dispatch = {
     local: renderLocal,
-    bridge: renderBridge,
     community: renderCommunity,
     develop: renderDevelop,
     docs: renderDocs,
@@ -262,6 +273,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
   renderNav();
   renderScreen();
+  wireGlobalKeys();
 
   // Update-available: show the dedicated update button under the version line.
   const showUpdateButton = (version, onClick) => {
@@ -278,56 +290,163 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 });
 
-function wireDropZone() {
-  const zone = document.getElementById("sb-drop");
-  if (!zone) return;
-  const ico = document.getElementById("drop-ico");
-  if (ico) ico.appendChild(Ico("upload", { size: 18, sw: 1.4 }));
+// Global keyboard shortcuts: Escape closes the topmost modal; Cmd/Ctrl+K jumps
+// to the Community search and focuses it.
+function wireGlobalKeys() {
+  const focusCommunitySearch = (tries = 12) => {
+    const input = document.getElementById("c-search");
+    if (input) {
+      input.focus();
+      input.select();
+      return;
+    }
+    if (tries > 0) requestAnimationFrame(() => focusCommunitySearch(tries - 1));
+  };
 
-  ["dragenter", "dragover"].forEach((ev) =>
-    zone.addEventListener(ev, (e) => {
+  document.addEventListener("keydown", (e) => {
+    // Esc — dismiss the topmost open modal (backdrops are stacked on <body>).
+    if (e.key === "Escape") {
+      const backdrops = document.querySelectorAll(".modal-backdrop");
+      if (backdrops.length) {
+        backdrops[backdrops.length - 1].remove();
+        e.preventDefault();
+        return;
+      }
+    }
+    // Cmd/Ctrl+K — focus the Community search (navigating there first if needed).
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "k") {
       e.preventDefault();
-      e.stopPropagation();
-      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-      zone.classList.add("dragover");
-    }),
-  );
-  ["dragleave", "dragend"].forEach((ev) =>
-    zone.addEventListener(ev, (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      zone.classList.remove("dragover");
-    }),
-  );
-  zone.addEventListener("drop", async (e) => {
+      if (state.nav !== "community") navigate("community");
+      focusCommunitySearch();
+    }
+  });
+}
+
+// Window-wide drag & drop: a .js file dragged anywhere over the window raises a
+// full-window overlay; dropping opens a dialog to save-only or save & install.
+function wireDropZone() {
+  const overlay = document.getElementById("drag-overlay");
+  const overlayIco = document.getElementById("drag-overlay-ico");
+  if (overlayIco && !overlayIco.childNodes.length)
+    overlayIco.appendChild(Ico("upload", { size: 40, sw: 1.3 }));
+
+  let dragDepth = 0;
+  const draggingFiles = (e) =>
+    e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files");
+  const hideOverlay = () => {
+    dragDepth = 0;
+    if (overlay) overlay.hidden = true;
+  };
+
+  document.addEventListener("dragenter", (e) => {
+    if (!draggingFiles(e)) return;
+    e.preventDefault();
+    dragDepth++;
+    if (overlay) overlay.hidden = false;
+  });
+  document.addEventListener("dragover", (e) => {
+    if (!draggingFiles(e)) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+  });
+  document.addEventListener("dragleave", (e) => {
+    if (!draggingFiles(e)) return;
+    e.preventDefault();
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) hideOverlay();
+  });
+  document.addEventListener("drop", async (e) => {
     e.preventDefault();
     e.stopPropagation();
-    zone.classList.remove("dragover");
+    hideOverlay();
+    if (!e.dataTransfer) return;
     const files = Array.from(e.dataTransfer.files || []).filter((f) =>
       f.name.toLowerCase().endsWith(".js"),
     );
     if (files.length === 0) {
-      alert("Only .js files are accepted.");
+      if (Array.from(e.dataTransfer.types || []).includes("Files"))
+        alert("Only .js files are accepted.");
       return;
     }
-    let savedCount = 0;
+    const items = [];
     for (const f of files) {
       try {
-        const code = await f.text();
-        const safeName = f.name.toLowerCase().replace(/[^a-z0-9_.-]/g, "-");
-        const r = await window.api.saveLocalScript(safeName, code);
-        if (r && r.success) savedCount++;
+        items.push({
+          name: f.name.toLowerCase().replace(/[^a-z0-9_.-]/g, "-"),
+          code: await f.text(),
+        });
       } catch {}
     }
-    if (savedCount && state.nav === "local") renderScreen();
+    if (items.length) openDropChoiceModal(items);
   });
-  // Prevent the browser from navigating away if the user misses the zone
-  ["dragover", "drop"].forEach((ev) =>
-    document.addEventListener(ev, (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-    }),
-  );
+}
+
+// Dialog shown after dropping .js files: save to My Scripts only, or also
+// install into Affinity via the bridge. Both write to disk first.
+function openDropChoiceModal(items) {
+  const bd = document.createElement("div");
+  bd.className = "modal-backdrop";
+  const count = items.length;
+  const heading = count === 1 ? "Add script" : `Add ${count} scripts`;
+  const summary =
+    count === 1
+      ? `<strong>${escapeHtml(items[0].name)}</strong> is ready to add.`
+      : `<strong>${count}</strong> scripts are ready to add.`;
+  bd.innerHTML = `
+    <div class="modal">
+      <div class="modal-head">
+        <h3>${heading}</h3>
+        <button class="icon-btn" id="m-close"></button>
+      </div>
+      <div class="modal-body">
+        <p>${summary} What would you like to do?</p>
+      </div>
+      <div class="modal-foot">
+        <button class="gh-btn" id="m-save-only">Just save to My Scripts</button>
+        <button class="accent-btn" id="m-save-install">Save &amp; install</button>
+      </div>
+    </div>`;
+  bd.querySelector("#m-close").appendChild(Ico("close", { size: 12 }));
+  document.body.appendChild(bd);
+
+  const close = () => bd.remove();
+  bd.querySelector("#m-close").onclick = close;
+  bd.addEventListener("click", (e) => {
+    if (e.target === bd) close();
+  });
+
+  async function process(install, btn) {
+    btn.innerHTML = `<span class="loading">${install ? "Installing" : "Saving"}</span>`;
+    bd.querySelectorAll("button").forEach((b) => (b.disabled = true));
+    let saved = 0;
+    let pushFailed = false;
+    for (const it of items) {
+      try {
+        const r = await window.api.saveLocalScript(it.name, it.code);
+        if (r && r.success) {
+          saved++;
+          if (install) {
+            const p = await window.api.pushToMcp(it.name);
+            if (!p || !p.success) pushFailed = true;
+          }
+        }
+      } catch {
+        pushFailed = true;
+      }
+    }
+    close();
+    if (install && pushFailed) {
+      alert(
+        "Saved locally, but at least one script couldn't be installed into Affinity. Make sure the Affinity bridge (MCP) is running.",
+      );
+    }
+    if (saved && state.nav === "local") renderScreen();
+  }
+
+  bd.querySelector("#m-save-only").onclick = (e) =>
+    process(false, e.currentTarget);
+  bd.querySelector("#m-save-install").onclick = (e) =>
+    process(true, e.currentTarget);
 }
 
 // ---------- helpers ----------
@@ -379,6 +498,309 @@ function cmpVer(a, b) {
   return 0;
 }
 
+// Popup explaining how contributing works, then copying the script to the
+// clipboard and opening a blank GitHub issue to paste into. Shown from the
+// per-script Share action (local + Affinity) and the Community "Submit Script"
+// button. opts: { filename } | { mcpTitle } | {}.
+function openShareModal(opts = {}) {
+  const isGeneric = !opts.filename && !opts.mcpTitle;
+  const steps = isGeneric
+    ? [
+        "Click <strong>Open GitHub issue</strong> — the contribution template opens.",
+        "Sign in to GitHub (a free account is enough). The app never sees your credentials.",
+        "Fill in the details and drag in a 16:9 preview image if you have one.",
+        "Hit <strong>Submit</strong>. A maintainer reviews it and adds it to the registry.",
+        "Once merged, it shows up in the Community tab for everyone.",
+      ]
+    : [
+        "Click <strong>Open GitHub issue</strong> — your script is copied and a blank issue opens.",
+        "Sign in to GitHub (a free account is enough). The app never sees your credentials.",
+        "Paste with <kbd>Cmd/Ctrl+V</kbd> — the whole submission fills in.",
+        "Drag in a 16:9 preview image if you have one, then hit <strong>Submit</strong>.",
+        "A maintainer reviews it and adds it to the registry; once merged it appears in Community.",
+      ];
+  const bd = document.createElement("div");
+  bd.className = "modal-backdrop";
+  bd.innerHTML = `
+    <div class="modal">
+      <div class="modal-head">
+        <h3>Share to the community</h3>
+        <button class="icon-btn" id="m-close"></button>
+      </div>
+      <div class="modal-body">
+        <p>This publishes your script to the community repository so it can appear in everyone's Community tab. Here's how it works:</p>
+        <ol class="share-steps">${steps.map((s) => `<li>${s}</li>`).join("")}</ol>
+      </div>
+      <div class="modal-foot">
+        <button class="gh-btn" id="m-cancel">Cancel</button>
+        <button class="accent-btn" id="m-open"><span id="ico-gh"></span> Open GitHub issue</button>
+      </div>
+    </div>`;
+  bd.querySelector("#m-close").appendChild(Ico("close", { size: 12 }));
+  bd.querySelector("#ico-gh").appendChild(Ico("github", { size: 13 }));
+  document.body.appendChild(bd);
+
+  const close = () => bd.remove();
+  bd.querySelector("#m-close").onclick = close;
+  bd.querySelector("#m-cancel").onclick = close;
+  bd.addEventListener("click", (e) => {
+    if (e.target === bd) close();
+  });
+
+  bd.querySelector("#m-open").onclick = async (e) => {
+    const btn = e.currentTarget;
+    if (isGeneric) {
+      window.api.openExternalRepo();
+      close();
+      return;
+    }
+    btn.disabled = true;
+    const r = opts.filename
+      ? await window.api.buildShareIssue(opts.filename)
+      : await window.api.buildShareIssueMcp(opts.mcpTitle);
+    if (!r || !r.success) {
+      alert(
+        "Couldn't read the script: " + ((r && r.error) || "unknown error"),
+      );
+      btn.disabled = false;
+      return;
+    }
+    // Always copy the (template-shaped) body and open a blank issue to paste into.
+    try {
+      await navigator.clipboard.writeText(r.body);
+    } catch {}
+    window.api.openUrl(r.baseUrl);
+    bd.querySelector(".modal-body").innerHTML = `
+      <div class="share-done">
+        <span class="share-done-ico">✓</span>
+        <p><strong>Copied to clipboard.</strong> In the GitHub tab that just opened, paste with <kbd>Cmd/Ctrl+V</kbd> and hit <strong>Submit</strong>.</p>
+      </div>`;
+    bd.querySelector(".modal-foot").innerHTML = `<button class="accent-btn" id="m-done">Done</button>`;
+    bd.querySelector("#m-done").onclick = close;
+  };
+}
+
+// Pull the newer community version of a script into the local library.
+// Returns true on success. Used by both the top updates panel and the row badge.
+async function applyScriptUpdate(update) {
+  const r = await window.api.saveCommunityScript(
+    update.download_url,
+    update.name,
+    communityScriptMetadata(update),
+  );
+  return !!(r && r.success);
+}
+
+// Explains an update before applying it: what changes, and the Affinity
+// limitation that a script already installed there can't be overwritten or
+// deleted (so the user must uninstall the old copy first to avoid a duplicate).
+// opts: { heading, versionLine?, isActive?, run: async (install) => boolean }
+function openUpdateModal(opts) {
+  const bd = document.createElement("div");
+  bd.className = "modal-backdrop";
+  bd.innerHTML = `
+    <div class="modal">
+      <div class="modal-head">
+        <h3>${escapeHtml(opts.heading)}</h3>
+        <button class="icon-btn" id="m-close"></button>
+      </div>
+      <div class="modal-body">
+        <img class="update-illustration" src="assets/updatescript.png" alt="In Affinity, right-click the script in the Scripts panel and delete it, then reinstall">
+        ${opts.versionLine ? `<div class="update-ver-line">${opts.versionLine}</div>` : ""}
+        <div class="update-note">
+          <div class="update-note-title">Affinity can't overwrite or delete an installed script</div>
+          <p>${
+            opts.isActive
+              ? "This script is currently installed in Affinity, so the update can't replace it automatically. Delete the current version in Affinity first — right-click it in the Scripts panel and delete it — then install the new version below."
+              : "If this script is installed in Affinity, delete it there first — right-click it in the Scripts panel and delete it — then install the new version below. Otherwise you'll end up with a duplicate."
+          }</p>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="gh-btn" id="m-local" title="Download the new version into My Scripts without touching Affinity">Save update only</button>
+        <button class="accent-btn" id="m-install" title="Download the new version and install it into Affinity">Update &amp; install</button>
+      </div>
+    </div>`;
+  bd.querySelector("#m-close").appendChild(Ico("close", { size: 12 }));
+  document.body.appendChild(bd);
+
+  const close = () => bd.remove();
+  bd.querySelector("#m-close").onclick = close;
+  bd.addEventListener("click", (e) => {
+    if (e.target === bd) close();
+  });
+
+  const localBtn = bd.querySelector("#m-local");
+  const installBtn = bd.querySelector("#m-install");
+  const localLabel = localBtn.textContent;
+  const installLabel = installBtn.innerHTML;
+
+  async function go(install, btn) {
+    btn.innerHTML = `<span class="loading">${install ? "Installing" : "Updating"}</span>`;
+    localBtn.disabled = true;
+    installBtn.disabled = true;
+    const ok = await opts.run(install);
+    if (ok) {
+      close();
+      renderScreen();
+      return;
+    }
+    alert("Update failed. Make sure the repository is reachable.");
+    localBtn.disabled = false;
+    installBtn.disabled = false;
+    localBtn.textContent = localLabel;
+    installBtn.innerHTML = installLabel;
+  }
+
+  localBtn.onclick = () => go(false, localBtn);
+  installBtn.onclick = () => go(true, installBtn);
+}
+
+// Grouped panel listing every local script that has a newer community version,
+// with per-script and "Update all" actions. `pending` = [{ it, update, active }].
+function renderUpdatesPanel(container, pending) {
+  if (!container) return;
+  if (!pending.length) {
+    container.hidden = true;
+    container.innerHTML = "";
+    return;
+  }
+  container.hidden = false;
+  container.innerHTML = `
+    <div class="updates-head">
+      <div class="updates-title">
+        <span class="updates-badge">${pending.length}</span>
+        <span>${pending.length === 1 ? "Update available" : "Updates available"}</span>
+      </div>
+      <button class="accent-btn compact" id="upd-all">Update all</button>
+    </div>
+    <div class="updates-list"></div>
+  `;
+
+  const list = container.querySelector(".updates-list");
+  pending.forEach(({ it, update, active }) => {
+    const row = document.createElement("div");
+    row.className = "updates-row";
+    row.innerHTML = `
+      <div class="updates-name">${escapeHtml(it.name)}<span class="row-ext">.js</span></div>
+      <div class="updates-ver">
+        <span class="updates-ver-old">v${escapeHtml(it.version || "?")}</span>
+        <span class="updates-ver-arrow">→</span>
+        <span class="updates-ver-new">v${escapeHtml(update.version)}</span>
+      </div>
+      <button class="gh-btn compact updates-btn">Update</button>
+    `;
+    row.querySelector(".updates-btn").onclick = () =>
+      openUpdateModal({
+        heading: `Update ${it.name}`,
+        versionLine: `<span class="updates-ver-old">v${escapeHtml(it.version || "?")}</span> <span class="updates-ver-arrow">→</span> <span class="updates-ver-new">v${escapeHtml(update.version)}</span>`,
+        isActive: active,
+        run: async (install) => {
+          if (!(await applyScriptUpdate(update))) return false;
+          if (install) await window.api.pushToMcp(it.file);
+          return true;
+        },
+      });
+    list.appendChild(row);
+  });
+
+  container.querySelector("#upd-all").onclick = () =>
+    openUpdateModal({
+      heading: `Update ${pending.length} script${pending.length === 1 ? "" : "s"}`,
+      isActive: pending.some((p) => p.active),
+      run: async (install) => {
+        let failed = 0;
+        for (const { it, update } of pending) {
+          if (!(await applyScriptUpdate(update))) {
+            failed++;
+            continue;
+          }
+          if (install) {
+            const p = await window.api.pushToMcp(it.file);
+            if (!p || !p.success) failed++;
+          }
+        }
+        if (failed)
+          alert(
+            `${failed} update${failed === 1 ? "" : "s"} failed. Make sure the repositories are reachable.`,
+          );
+        return true;
+      },
+    });
+}
+
+// "Run without install" — execute a script in Affinity right now (via MCP,
+// without adding it to the library) and show the console output + a rendered
+// preview. opts: { code } (editor buffer) or { downloadUrl } (community), plus
+// optional name.
+function openRunModal(opts = {}) {
+  const bd = document.createElement("div");
+  bd.className = "modal-backdrop";
+  bd.innerHTML = `
+    <div class="modal run-modal">
+      <div class="modal-head">
+        <h3>Run without install${opts.name ? ` — ${escapeHtml(opts.name)}` : ""}</h3>
+        <button class="icon-btn" id="m-close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="run-note">Runs this script in Affinity now, without adding it to your library.</p>
+        <div class="run-preview" id="run-preview" hidden></div>
+        <div class="run-console-label">Console output</div>
+        <pre class="run-console" id="run-console"></pre>
+      </div>
+      <div class="modal-foot">
+        <button class="gh-btn" id="m-rerun">Run again</button>
+        <button class="accent-btn" id="m-done">Done</button>
+      </div>
+    </div>`;
+  bd.querySelector("#m-close").appendChild(Ico("close", { size: 12 }));
+  document.body.appendChild(bd);
+
+  const close = () => bd.remove();
+  bd.querySelector("#m-close").onclick = close;
+  bd.querySelector("#m-done").onclick = close;
+  bd.addEventListener("click", (e) => {
+    if (e.target === bd) close();
+  });
+
+  const consoleEl = bd.querySelector("#run-console");
+  const previewEl = bd.querySelector("#run-preview");
+  const rerunBtn = bd.querySelector("#m-rerun");
+
+  async function run() {
+    rerunBtn.disabled = true;
+    consoleEl.innerHTML = '<span class="loading">Running in Affinity</span>';
+    previewEl.hidden = true;
+    previewEl.innerHTML = "";
+
+    const r = opts.downloadUrl
+      ? await window.api.runCommunityScript(opts.downloadUrl)
+      : await window.api.executeScript(opts.code || "");
+    if (!r || !r.success) {
+      consoleEl.classList.add("run-error");
+      consoleEl.textContent =
+        (r && r.error) ||
+        "Run failed — make sure Affinity is open and the MCP bridge is running.";
+      rerunBtn.disabled = false;
+      return;
+    }
+    consoleEl.classList.remove("run-error");
+    consoleEl.textContent =
+      r.output && r.output.trim() ? r.output : "(no console output)";
+
+    // Best-effort rendered preview of the active document.
+    const p = await window.api.renderActivePreview().catch(() => null);
+    if (p && p.success && p.image) {
+      previewEl.hidden = false;
+      previewEl.innerHTML = `<img src="${p.image}" alt="Rendered preview of the active document">`;
+    }
+    rerunBtn.disabled = false;
+  }
+
+  rerunBtn.onclick = run;
+  run();
+}
+
 // ---------- My Scripts screen ----------
 async function renderLocal(root) {
   const screen = document.createElement("div");
@@ -387,10 +809,22 @@ async function renderLocal(root) {
     <div class="eyebrow">Library</div>
     <h1>My Scripts</h1>
     <p class="subhead" id="local-subhead">Loading…</p>
-    <div class="status-bar" id="local-status"></div>
-    <div class="table" id="local-table"></div>
+    <div class="local-statusline" id="local-status"></div>
+    <div class="search-bar" style="margin-bottom:16px;">
+      <div class="search-wrap">
+        <span id="local-search-ico"></span>
+        <input id="local-search" type="text" placeholder="Search your scripts by name or description…" />
+      </div>
+    </div>
+    <div class="cat-tabs" id="local-tabs"></div>
+    <div class="updates-panel" id="local-updates" hidden></div>
+    <div id="local-content"></div>
   `;
   root.appendChild(screen);
+
+  // Skeleton rows while data loads (replaced once the tab content is built).
+  screen.querySelector("#local-content").innerHTML =
+    `<div class="table">${Array.from({ length: 6 }).map(localSkeletonRow).join("")}</div>`;
 
   // Fetch local + bridge + community in parallel — bridge drives Active/Paused state,
   // community drives Update-available indication.
@@ -407,6 +841,11 @@ async function renderLocal(root) {
   const items = localRes.data;
   const totalBytes = items.reduce((a, b) => a + b.size, 0);
   updateNavCount("local", items.length);
+
+  const favRes = await window.api
+    .getFavorites()
+    .catch(() => ({ success: false }));
+  state.favorites = new Set(favRes && favRes.success ? favRes.data : []);
 
   // Normalise bridge titles for cross-referencing (stem-based, lowercase).
   // Bridge is "online" whenever the RPC succeeded, even if the library is empty
@@ -451,34 +890,222 @@ async function renderLocal(root) {
   screen.querySelector("#local-subhead").innerHTML =
     `${items.length} scripts · ${fmtBytes(totalBytes)} total`;
   screen.querySelector("#local-status").innerHTML = `
-    <div class="left">
-      <span class="status-dot ${bridgeOnline ? "on" : ""}"></span>
-      <span>${bridgeOnline ? `Connected to Affinity · ${activeCount} active` : "Affinity not connected"}</span>
-    </div>
-    <div style="color:var(--text-faint); font-size:12px;">watch mode: on</div>
+    <span class="status-dot ${bridgeOnline ? "on" : ""}"></span>
+    <span>${bridgeOnline ? `Affinity connected · ${activeCount} active` : "Affinity not connected"}</span>
+    <span class="sl-sep">·</span>
+    <span>watch mode on</span>
+    <button class="sl-more" id="btn-bridge-info">More info</button>
   `;
+  screen.querySelector("#btn-bridge-info").onclick = openBridgeModal;
 
-  const table = screen.querySelector("#local-table");
-  const hdr = document.createElement("div");
-  hdr.className = "table-row header";
-  hdr.innerHTML = `<div class="col">Status</div><div class="col">Name</div><div class="col">Modified</div><div class="col">Size</div><div class="col">Actions</div>`;
-  table.appendChild(hdr);
+  // Grouped "updates available" panel — data only; painted per active tab.
+  const pendingUpdates = items
+    .map((it) => ({ it, update: updateFor(it), active: bridgeOnline && isActive(it) }))
+    .filter((x) => x.update);
 
-  if (items.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "table-row";
-    empty.style.padding = "48px 20px";
-    empty.style.color = "var(--text-faint)";
-    empty.textContent = "No scripts yet. Click Add Script to add one.";
-    table.appendChild(empty);
-    return;
+  // Scripts in Affinity that aren't in the local library ("Just in Affinity" tab).
+  const bridgeTitleList =
+    bridgeOnline && typeof bridgeRes.data === "string"
+      ? bridgeRes.data.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean)
+      : [];
+  const localStems = new Set();
+  for (const it of items) {
+    localStems.add(it.file.replace(/\.js$/i, "").toLowerCase());
+    localStems.add((it.name || "").toLowerCase());
+  }
+  const isLocalTitle = (t) =>
+    localStems.has(t.toLowerCase().replace(/[^a-z0-9_-]/g, "-")) ||
+    localStems.has(t.toLowerCase());
+  const orphans = bridgeTitleList.filter((t) => !isLocalTitle(t));
+
+  // Descriptions aren't in the bridge list; read + parse each script's header
+  // lazily and cache it so tab-switching doesn't re-fetch.
+  const orphanMetaCache = new Map();
+  function fillOrphanDescription(title, nameCell) {
+    const apply = (meta) => {
+      if (meta && meta.description) {
+        const desc = document.createElement("div");
+        desc.className = "row-desc";
+        desc.textContent = meta.description;
+        nameCell.appendChild(desc);
+      }
+    };
+    if (orphanMetaCache.has(title)) return apply(orphanMetaCache.get(title));
+    window.api.readMcpMetadata(title).then((r) => {
+      const meta = r && r.success ? r.data : null;
+      orphanMetaCache.set(title, meta);
+      apply(meta);
+    });
   }
 
-  for (const it of items) {
-    const row = document.createElement("div");
-    row.className = "table-row";
+  const tabsEl = screen.querySelector("#local-tabs");
+  const contentEl = screen.querySelector("#local-content");
+  const updatesEl = screen.querySelector("#local-updates");
 
-    const active = bridgeOnline && isActive(it);
+  function renderLocalTabs() {
+    const defs = [
+      { id: "local", label: "Local", count: items.length },
+      { id: "affinity", label: "Just in Affinity", count: orphans.length },
+    ];
+    tabsEl.innerHTML = "";
+    for (const d of defs) {
+      const btn = document.createElement("button");
+      btn.className = "cat-tab" + (state.localTab === d.id ? " active" : "");
+      btn.innerHTML = `<span>${d.label}</span><span class="count">${d.count}</span>`;
+      btn.onclick = () => {
+        state.localTab = d.id;
+        renderLocalTabs();
+        paintLocalTab();
+      };
+      tabsEl.appendChild(btn);
+    }
+  }
+
+  function paintLocalTab() {
+    // The updates panel is about local scripts, so only on the My Scripts tab.
+    renderUpdatesPanel(
+      updatesEl,
+      state.localTab === "local" ? pendingUpdates : [],
+    );
+    contentEl.innerHTML = "";
+    if (state.localTab === "affinity") buildAffinityOnly(contentEl);
+    else buildLocalTable(contentEl);
+  }
+
+  function buildAffinityOnly(container) {
+    // Same table visual as the Local tab, but these live only in Affinity:
+    // blue dot = active in Affinity, and the only action is Download to library.
+    const table = document.createElement("div");
+    table.className = "table affinity-table";
+    const hdr = document.createElement("div");
+    hdr.className = "table-row header";
+    hdr.innerHTML = `<div class="col">Status</div><div class="col">Name</div><div class="col">Actions</div>`;
+    table.appendChild(hdr);
+
+    const emptyRow = (msg) => {
+      const empty = document.createElement("div");
+      empty.className = "table-row";
+      empty.style.cssText =
+        "padding:48px 20px; color:var(--text-faint); display:block;";
+      empty.textContent = msg;
+      table.appendChild(empty);
+      container.appendChild(table);
+    };
+    if (!bridgeOnline)
+      return emptyRow(
+        "Affinity isn't connected — open More info to check the bridge.",
+      );
+    if (orphans.length === 0)
+      return emptyRow("Every script in Affinity is already in your library.");
+
+    const q = state.localQuery.trim().toLowerCase();
+    const list = q
+      ? orphans.filter((t) => t.toLowerCase().includes(q))
+      : orphans;
+    if (list.length === 0)
+      return emptyRow(`No scripts match "${state.localQuery.trim()}".`);
+
+    for (const t of list) {
+      const row = document.createElement("div");
+      row.className = "table-row";
+
+      const dotCell = document.createElement("div");
+      const dot = document.createElement("button");
+      dot.className = "install-dot on affinity";
+      dot.title = "Active in Affinity (not in your library)";
+      dotCell.appendChild(dot);
+
+      const nameCell = document.createElement("div");
+      const nameLine = document.createElement("div");
+      nameLine.className = "row-name";
+      nameLine.innerHTML = `${escapeHtml(t)}<span class="row-ext">.js</span>`;
+      nameCell.appendChild(nameLine);
+      fillOrphanDescription(t, nameCell);
+
+      const actions = document.createElement("div");
+      actions.className = "actions";
+
+      const dlLocal = document.createElement("button");
+      dlLocal.className = "icon-btn";
+      dlLocal.title = "Download to My Scripts";
+      dlLocal.appendChild(Ico("download", { size: 13, sw: 1.4 }));
+      dlLocal.onclick = (e) => {
+        e.stopPropagation();
+        openDownloadModal(t);
+      };
+
+      const dlFolder = document.createElement("button");
+      dlFolder.className = "icon-btn";
+      dlFolder.title = "Download to a folder";
+      dlFolder.appendChild(Ico("folder", { size: 13, sw: 1.4 }));
+      dlFolder.onclick = async (e) => {
+        e.stopPropagation();
+        dlFolder.disabled = true;
+        const r = await window.api.exportMcpToDisk(t);
+        dlFolder.disabled = false;
+        if (r && !r.success && r.error && r.error !== "Cancelled") {
+          alert("Export failed: " + r.error);
+        }
+      };
+
+      const share = document.createElement("button");
+      share.className = "icon-btn";
+      share.title = "Share to community repo (GitHub)";
+      share.appendChild(Ico("github", { size: 13, sw: 1.4 }));
+      share.onclick = (e) => {
+        e.stopPropagation();
+        openShareModal({ mcpTitle: t });
+      };
+
+      actions.append(dlLocal, dlFolder, share);
+      row.append(dotCell, nameCell, actions);
+      table.appendChild(row);
+    }
+    container.appendChild(table);
+  }
+
+  function buildLocalTable(container) {
+    const q = state.localQuery.trim().toLowerCase();
+    let list = q
+      ? items.filter((it) =>
+          [it.name, it.description, it.file].some((v) =>
+            (v || "").toLowerCase().includes(q),
+          ),
+        )
+      : items.slice();
+    // Favorites float to the top (stable sort keeps the rest in place).
+    list.sort(
+      (a, b) =>
+        (state.favorites.has(scriptStem(b.file)) ? 1 : 0) -
+        (state.favorites.has(scriptStem(a.file)) ? 1 : 0),
+    );
+
+    const table = document.createElement("div");
+    table.className = "table";
+    const hdr = document.createElement("div");
+    hdr.className = "table-row header";
+    hdr.innerHTML = `<div class="col">Status</div><div class="col">Name</div><div class="col">Modified</div><div class="col">Size</div><div class="col">Actions</div>`;
+    table.appendChild(hdr);
+
+    if (list.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "table-row";
+      empty.style.padding = "48px 20px";
+      empty.style.color = "var(--text-faint)";
+      empty.textContent =
+        items.length === 0
+          ? "No scripts yet. Click Add Script to add one."
+          : `No scripts match "${state.localQuery.trim()}".`;
+      table.appendChild(empty);
+      container.appendChild(table);
+      return;
+    }
+
+    for (const it of list) {
+      const row = document.createElement("div");
+      row.className = "table-row";
+
+      const active = bridgeOnline && isActive(it);
 
     // Install dot — grey when paused (row-hover previews green), green when active.
     // Uninstall isn't exposed by Affinity's MCP, so active dots are non-interactive.
@@ -509,33 +1136,43 @@ async function renderLocal(root) {
     const nameLine = document.createElement("div");
     nameLine.className = "row-name";
     nameLine.innerHTML = `${escapeHtml(it.name)}<span class="row-ext">.js</span>`;
+
+    const favKey = scriptStem(it.file);
+    const isFav = state.favorites.has(favKey);
+    const fav = document.createElement("button");
+    fav.className = "row-fav" + (isFav ? " active" : "");
+    fav.title = isFav ? "Remove from favorites" : "Add to favorites";
+    fav.appendChild(Ico("star", { size: 13, sw: 1.4 }));
+    fav.onclick = async (e) => {
+      e.stopPropagation();
+      if (await toggleScriptFavorite(favKey)) paintLocalTab();
+    };
+
     const update = updateFor(it);
     if (update) {
       const upBadge = document.createElement("button");
       upBadge.className = "tag tag-warn tag-clickable";
       upBadge.innerHTML = `\u2191 Update <span style="opacity:.7; margin-left:4px;">${escapeHtml(update.version)}</span>`;
       upBadge.title = `Update to v${update.version}`;
-      upBadge.onclick = async (e) => {
+      upBadge.onclick = (e) => {
         e.stopPropagation();
-        const orig = upBadge.innerHTML;
-        upBadge.innerHTML = '<span class="loading">Updating</span>';
-        upBadge.disabled = true;
-        const r = await window.api.saveCommunityScript(
-          update.download_url,
-          update.name,
-          communityScriptMetadata(update),
-        );
-        if (r && r.success) {
-          renderScreen();
-          return;
-        }
-        alert("Update failed: " + ((r && r.error) || "unknown error"));
-        upBadge.innerHTML = orig;
-        upBadge.disabled = false;
+        openUpdateModal({
+          heading: `Update ${it.name}`,
+          versionLine: `<span class="updates-ver-old">v${escapeHtml(it.version || "?")}</span> <span class="updates-ver-arrow">→</span> <span class="updates-ver-new">v${escapeHtml(update.version)}</span>`,
+          isActive: active,
+          run: async (install) => {
+            if (!(await applyScriptUpdate(update))) return false;
+            if (install) await window.api.pushToMcp(it.file);
+            return true;
+          },
+        });
       };
       nameLine.appendChild(upBadge);
     }
-    nameCell.appendChild(nameLine);
+    const nameHead = document.createElement("div");
+    nameHead.className = "row-name-head";
+    nameHead.append(fav, nameLine);
+    nameCell.appendChild(nameHead);
     if (it.description) {
       const desc = document.createElement("div");
       desc.className = "row-desc";
@@ -579,6 +1216,12 @@ async function renderLocal(root) {
       }),
     );
     actions.appendChild(
+      mkBtn("github", "Share to community repo (GitHub)", (e) => {
+        e.stopPropagation();
+        openShareModal({ filename: it.file });
+      }),
+    );
+    actions.appendChild(
       mkBtn(
         "trash",
         "Delete",
@@ -592,52 +1235,67 @@ async function renderLocal(root) {
       ),
     );
 
-    row.append(dotCell, nameCell, modCell, sizeCell, actions);
-    // Whole row = install target for paused rows. Active rows are non-interactive at row level.
-    if (bridgeOnline && !active) {
-      row.style.cursor = "pointer";
-      row.onclick = () => dot.click();
+      row.append(dotCell, nameCell, modCell, sizeCell, actions);
+      // Whole row = install target for paused rows. Active rows are non-interactive at row level.
+      if (bridgeOnline && !active) {
+        row.style.cursor = "pointer";
+        row.onclick = () => dot.click();
+      }
+      table.appendChild(row);
     }
-    table.appendChild(row);
+    container.appendChild(table);
   }
+
+  screen
+    .querySelector("#local-search-ico")
+    .appendChild(Ico("search", { size: 13 }));
+  const localSearch = screen.querySelector("#local-search");
+  localSearch.value = state.localQuery;
+  localSearch.oninput = (e) => {
+    state.localQuery = e.target.value;
+    paintLocalTab();
+  };
+
+  renderLocalTabs();
+  paintLocalTab();
 }
 
-// ---------- Installed Scripts screen ----------
-async function renderBridge(root) {
-  const screen = document.createElement("div");
-  screen.className = "screen";
-  screen.innerHTML = `
-    <div class="eyebrow">Library</div>
-    <h1>Installed Scripts</h1>
-    <p class="subhead">MCP connection to <span style="color:var(--text-strong)">localhost:6767</span></p>
-
-    <div class="bridge-table">
-      <div class="bridge-row header">
-        <div class="col">Host</div><div class="col">Address</div>
-        <div class="col">Version</div><div class="col">Latency</div>
-        <div class="col">Status</div><div class="col">Action</div>
+// "More info" modal: Affinity bridge connection diagnostics + event stream.
+// (Scripts that are only in Affinity now live in the "Just in Affinity" tab.)
+function openBridgeModal() {
+  const bd = document.createElement("div");
+  bd.className = "modal-backdrop";
+  bd.innerHTML = `
+    <div class="modal bridge-modal">
+      <div class="modal-head">
+        <h3>Affinity connection</h3>
+        <button class="icon-btn" id="m-close"></button>
       </div>
-      <div class="bridge-row" id="bridge-primary">
-        <div style="color:var(--text-strong)">Affinity MCP</div>
-        <div style="color:var(--text)">localhost:6767</div>
-        <div style="color:var(--text)">1.0.0</div>
-        <div id="bridge-latency" style="color:var(--text); font-variant-numeric:tabular-nums;">—</div>
-        <div style="display:flex; align-items:center; gap:8px;"><span class="status-dot" id="bridge-dot"></span> <span id="bridge-status" style="font:500 12px/1 var(--f-sans); color:var(--text-strong); text-transform:capitalize;"><span class="loading">checking</span></span></div>
-        <div><button class="gh-btn compact" id="btn-bridge-refresh">Refresh</button></div>
+      <div class="modal-body">
+        <div class="bridge-info">
+          <div class="bridge-info-row"><span class="k">Address</span><span class="v">localhost:6767</span></div>
+          <div class="bridge-info-row"><span class="k">Bridge version</span><span class="v">1.0.0</span></div>
+          <div class="bridge-info-row"><span class="k">Latency</span><span class="v" id="bm-latency">—</span></div>
+          <div class="bridge-info-row"><span class="k">Status</span><span class="v bm-status-cell"><span class="status-dot" id="bm-dot"></span><span id="bm-status"><span class="loading">checking</span></span></span></div>
+        </div>
+
+        <div class="bridge-section-head">
+          <span class="eyebrow">Event Stream</span>
+          <button class="gh-btn compact" id="bm-refresh">Refresh</button>
+        </div>
+        <div class="event-log" id="bm-log"></div>
       </div>
-    </div>
+    </div>`;
+  bd.querySelector("#m-close").appendChild(Ico("close", { size: 12 }));
+  document.body.appendChild(bd);
 
-    <details class="event-stream">
-      <summary class="eyebrow">Event Stream</summary>
-      <div class="event-log" id="bridge-log"></div>
-    </details>
+  const close = () => bd.remove();
+  bd.querySelector("#m-close").onclick = close;
+  bd.addEventListener("click", (e) => {
+    if (e.target === bd) close();
+  });
 
-    <h2 class="section-title">Scripts in Affinity</h2>
-    <div class="card-grid" id="bridge-cards"></div>
-  `;
-  root.appendChild(screen);
-
-  const log = screen.querySelector("#bridge-log");
+  const log = bd.querySelector("#bm-log");
   const pushEvent = (tag, msg) => {
     const line = document.createElement("div");
     line.className = "event-line";
@@ -645,68 +1303,125 @@ async function renderBridge(root) {
     line.innerHTML = `<span class="t">${now}</span><span class="tag-${tag}">${tag.toUpperCase()}</span><span class="msg">${escapeHtml(msg)}</span>`;
     log.prepend(line);
   };
-  pushEvent("info", "Attaching to bridge…");
 
-  const start = performance.now();
-  const res = await window.api.listMcpScripts();
-  const elapsed = Math.round(performance.now() - start);
-  screen.querySelector("#bridge-latency").textContent = `${elapsed} ms`;
+  async function load() {
+    pushEvent("info", "Attaching to bridge…");
+    const start = performance.now();
+    const bridgeRes = await window.api.listMcpScripts();
+    const elapsed = Math.round(performance.now() - start);
+    bd.querySelector("#bm-latency").textContent = `${elapsed} ms`;
 
-  if (res.success) {
-    screen.querySelector("#bridge-dot").classList.add("on");
-    screen.querySelector("#bridge-status").textContent = "online";
-    pushEvent("ok", `connected · ${elapsed}ms round-trip`);
-  } else {
-    screen.querySelector("#bridge-status").textContent = "offline";
-    pushEvent("warn", res.error || "bridge unreachable");
-  }
-
-  const cards = screen.querySelector("#bridge-cards");
-  const titles =
-    res.success && typeof res.data === "string"
-      ? res.data
-          .split(/[\n,]+/)
-          .map((s) => s.trim())
-          .filter(Boolean)
-      : [];
-  if (titles.length === 0) {
-    cards.innerHTML =
-      '<div style="color:var(--text-faint); font-size:12px; grid-column: 1/-1;">No scripts on bridge.</div>';
-  } else {
-    for (const t of titles) {
-      const c = document.createElement("div");
-      c.className = "card";
-      const title = document.createElement("div");
-      title.className = "card-title";
-      title.appendChild(Ico("file", { size: 14 }));
-      const span = document.createElement("span");
-      span.textContent = t;
-      title.appendChild(span);
-      c.appendChild(title);
-      const spacer = document.createElement("div");
-      spacer.style.flex = "1";
-      c.appendChild(spacer);
-      const btn = document.createElement("button");
-      btn.className = "gh-btn compact";
-      btn.textContent = "Download";
-      btn.onclick = () => {
-        if (typeof openDownloadModal === "function") openDownloadModal(t);
-        else alert("Download modal arrives in Task 10. Script title: " + t);
-      };
-      c.appendChild(btn);
-      cards.appendChild(c);
+    const dot = bd.querySelector("#bm-dot");
+    const statusEl = bd.querySelector("#bm-status");
+    if (bridgeRes && bridgeRes.success) {
+      dot.classList.add("on");
+      statusEl.textContent = "online";
+      pushEvent("ok", `connected · ${elapsed}ms round-trip`);
+    } else {
+      dot.classList.remove("on");
+      statusEl.textContent = "offline";
+      pushEvent("warn", (bridgeRes && bridgeRes.error) || "bridge unreachable");
     }
   }
 
-  screen.querySelector("#btn-bridge-refresh").onclick = () => renderScreen();
+  bd.querySelector("#bm-refresh").onclick = load;
+  load();
 }
 
 // ---------- Community Scripts screen ----------
+
+// A single shimmering placeholder card shown while community registries load.
+function communitySkeletonCard() {
+  return `
+    <div class="c-card c-skeleton">
+      <div class="sk sk-preview"></div>
+      <div class="sk sk-title"></div>
+      <div class="sk sk-text"></div>
+      <div class="sk sk-text sk-text-short"></div>
+      <div class="sk sk-foot"></div>
+    </div>`;
+}
+
+// Placeholder row for the My Scripts table (matches the 5-column grid).
+function localSkeletonRow() {
+  return `
+    <div class="table-row c-skeleton">
+      <div><div class="sk" style="width:14px;height:14px;border-radius:50%;"></div></div>
+      <div><div class="sk" style="width:50%;height:13px;"></div></div>
+      <div><div class="sk" style="width:65%;height:11px;"></div></div>
+      <div><div class="sk" style="width:55%;height:11px;"></div></div>
+      <div><div class="sk" style="width:75%;height:11px;"></div></div>
+    </div>`;
+}
+
+// Turn a per-repo failure from the backend into a human message that says *why*.
+function communityErrorMessage(e) {
+  const who = e.isDefault ? "Main community repository" : "A repository";
+  const map = {
+    unreachable: {
+      title: `${who} can't be reached`,
+      body: "The registry couldn't be downloaded — the server is unreachable. Check your internet connection and that the repository URL is correct.",
+    },
+    unavailable: {
+      title: `${who}'s registry isn't available`,
+      body: "The server responded, but the registry file wasn't found there. Make sure the URL points to a raw registry.json that exists.",
+    },
+    "invalid-json": {
+      title: `${who} has an invalid registry.json`,
+      body: "The registry was downloaded, but its JSON syntax is invalid, so it couldn't be parsed. Validate the JSON and fix the syntax error shown below.",
+    },
+  };
+  const m = map[e.reason] || {
+    title: `${who} couldn't be loaded`,
+    body: "The repository couldn't be loaded.",
+  };
+  return { ...m, url: e.url, detail: e.detail };
+}
+
+// Render (or clear) the error banner above the community grid.
+function renderCommunityErrors(container, res) {
+  if (!container) return;
+  const errors = (res && res.errors) || [];
+  const hardFail = res && res.success === false;
+  if (!hardFail && errors.length === 0) {
+    container.hidden = true;
+    container.innerHTML = "";
+    return;
+  }
+
+  const messages = [];
+  if (hardFail) {
+    messages.push({
+      title: "Couldn't load community scripts",
+      body: (res && res.error) || "An unknown error occurred.",
+      url: "",
+      detail: "",
+    });
+  }
+  for (const e of errors) messages.push(communityErrorMessage(e));
+
+  container.hidden = false;
+  container.innerHTML = messages
+    .map(
+      (m) => `
+      <div class="community-error">
+        <div class="community-error-ico">!</div>
+        <div class="community-error-text">
+          <div class="community-error-title">${escapeHtml(m.title)}</div>
+          <div class="community-error-body">${escapeHtml(m.body)}</div>
+          ${m.url ? `<div class="community-error-url">${escapeHtml(m.url)}</div>` : ""}
+          ${m.detail ? `<div class="community-error-detail">${escapeHtml(m.detail)}</div>` : ""}
+        </div>
+      </div>`,
+    )
+    .join("");
+}
+
 async function renderCommunity(root) {
   const screen = document.createElement("div");
   screen.className = "screen";
   screen.innerHTML = `
-    <div class="community-sticky">
+    <div class="community-head">
       <div class="eyebrow">Discover</div>
       <div class="screen-header">
         <div>
@@ -719,7 +1434,9 @@ async function renderCommunity(root) {
           <button class="accent-btn compact" id="btn-community-submit"><span id="ico-plus"></span> Submit Script</button>
         </div>
       </div>
+    </div>
 
+    <div class="community-sticky">
       <div class="search-bar">
         <div class="search-wrap">
           <span id="c-search-icon"></span>
@@ -739,8 +1456,17 @@ async function renderCommunity(root) {
       <div class="cat-tabs" id="c-tabs"></div>
     </div>
 
+    <div class="community-errors" id="c-errors" hidden></div>
+
     <div class="community-grid" id="c-grid">
-      <div style="grid-column: 1/-1; color: var(--text-faint); font-size: 12px; padding: 20px 0;"><span class="loading">Fetching community scripts</span></div>
+      <section class="community-carousel" id="c-featured" hidden>
+        <div class="cc-viewport">
+          <div class="cc-track" id="c-featured-track"></div>
+          <button class="cc-arrow cc-prev" id="cc-prev" title="Previous"></button>
+          <button class="cc-arrow cc-next" id="cc-next" title="Next"></button>
+        </div>
+        <div class="cc-dots" id="c-featured-dots"></div>
+      </section>
     </div>
   `;
   root.appendChild(screen);
@@ -763,16 +1489,82 @@ async function renderCommunity(root) {
   screen.querySelector("#btn-community-settings").onclick = () =>
     openSettingsModal();
   screen.querySelector("#btn-community-submit").onclick = () =>
-    window.api.openExternalRepo();
+    openShareModal({});
+
+  // Skeleton placeholders while the registries load (replaced by paint()).
+  screen.querySelector("#c-grid").insertAdjacentHTML(
+    "beforeend",
+    Array.from({ length: 8 }).map(communitySkeletonCard).join(""),
+  );
 
   const res = await window.api.listCommunityScripts();
   const scripts = res && res.success ? res.data || [] : [];
-  const favoritesRes = await window.api.getCommunityFavorites();
-  state.favoriteCommunityIds = new Set(
-    favoritesRes && favoritesRes.success
-      ? (favoritesRes.data || []).map((item) => `${item.repo}::${item.id}`)
-      : [],
+  renderCommunityErrors(screen.querySelector("#c-errors"), res);
+  const favoritesRes = await window.api.getFavorites();
+  state.favorites = new Set(
+    favoritesRes && favoritesRes.success ? favoritesRes.data : [],
   );
+
+  // Cross-reference the local library so each card knows its state:
+  //   install    — not in the library yet
+  //   installed  — in the library at the same/newer version (grey, no action)
+  //   update     — in the library but the community has a newer version (orange)
+  const localRes = await window.api
+    .listLocalScripts()
+    .catch(() => ({ success: false }));
+  const localByStem = new Map();
+  if (localRes && localRes.success && Array.isArray(localRes.data)) {
+    for (const it of localRes.data) {
+      localByStem.set(it.file.replace(/\.js$/i, "").toLowerCase(), it);
+      if (it.name)
+        localByStem.set(it.name.toLowerCase().replace(/[^a-z0-9_-]/g, "-"), it);
+    }
+  }
+  function communityInstallState(s) {
+    if (state.installedIds.has(s.download_url)) return "installed";
+    const stem = (s.name || "").toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+    const local = localByStem.get(stem);
+    if (!local) return "install";
+    if (s.version && local.version && cmpVer(local.version, s.version) < 0)
+      return "update";
+    return "installed";
+  }
+  // Button appearance for a community script's install state.
+  function communityBtnSpec(s) {
+    const st = communityInstallState(s);
+    if (st === "installed")
+      return { cls: " installed", label: "✓ Installed", disabled: true };
+    if (st === "update")
+      return { cls: " update", label: "↑ Update", disabled: false };
+    return { cls: "", label: "Install", disabled: false };
+  }
+
+  // Install-button click: install fresh, or (for the update state) open the same
+  // explanatory popup as My Scripts so users understand Affinity can't overwrite.
+  function handleCommunityInstallClick(s, button) {
+    if (communityInstallState(s) !== "update") {
+      installCommunityScript(s, button);
+      return;
+    }
+    const stem = (s.name || "").toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+    const local = localByStem.get(stem);
+    const localVer = (local && local.version) || "?";
+    openUpdateModal({
+      heading: `Update ${s.name}`,
+      versionLine: `<span class="updates-ver-old">v${escapeHtml(localVer)}</span> <span class="updates-ver-arrow">→</span> <span class="updates-ver-new">v${escapeHtml(s.version || "?")}</span>`,
+      isActive: false,
+      run: async (install) => {
+        if (!(await applyScriptUpdate(s))) return false;
+        if (install) {
+          const fn =
+            (s.name || "script").toLowerCase().replace(/[^a-z0-9_-]/g, "-") +
+            ".js";
+          await window.api.pushToMcp(fn);
+        }
+        return true;
+      },
+    });
+  }
 
   screen.querySelector("#c-count").textContent = scripts.length;
   updateNavCount("community", scripts.length);
@@ -791,7 +1583,7 @@ async function renderCommunity(root) {
   const tabs = screen.querySelector("#c-tabs");
   function favoriteCount() {
     return scripts.filter((s) =>
-      state.favoriteCommunityIds.has(communityFavoriteKey(s)),
+      state.favorites.has(communityFavoriteKey(s)),
     ).length;
   }
 
@@ -832,27 +1624,162 @@ async function renderCommunity(root) {
   };
 
   const grid = screen.querySelector("#c-grid");
+  const carouselEl = screen.querySelector("#c-featured");
+  const carouselTrack = screen.querySelector("#c-featured-track");
+  const carouselDots = screen.querySelector("#c-featured-dots");
+  const carouselPrev = screen.querySelector("#cc-prev");
+  const carouselNext = screen.querySelector("#cc-next");
+  carouselPrev.appendChild(Ico("chevronL", { size: 18, sw: 1.8 }));
+  carouselNext.appendChild(Ico("chevronR", { size: 18, sw: 1.8 }));
 
-  function applyFavoritesResponse(response) {
-    state.favoriteCommunityIds = new Set(
-      (response.data || []).map((item) => `${item.repo}::${item.id}`),
-    );
-    renderTabs();
-    paint();
+  let carouselTimer = null;
+  let carouselIndex = 0;
+  let carouselCount = 0;
+
+  function goToSlide(i, smooth = true) {
+    if (carouselCount === 0) return;
+    carouselIndex = (i + carouselCount) % carouselCount;
+    carouselTrack.scrollTo({
+      left: carouselIndex * carouselTrack.clientWidth,
+      behavior: smooth ? "smooth" : "auto",
+    });
+    updateDots();
   }
+
+  function updateDots() {
+    const dots = carouselDots.children;
+    for (let i = 0; i < dots.length; i++) {
+      dots[i].classList.toggle("active", i === carouselIndex);
+    }
+  }
+
+  function stopCarouselAutoplay() {
+    if (carouselTimer) {
+      clearInterval(carouselTimer);
+      carouselTimer = null;
+    }
+  }
+
+  function startCarouselAutoplay() {
+    stopCarouselAutoplay();
+    if (carouselCount < 2) return;
+    carouselTimer = setInterval(() => goToSlide(carouselIndex + 1), 6000);
+  }
+
+  // Featured carousel: shown only in the default "All" view with no active
+  // search, so it promotes curated picks without cluttering filtered results.
+  function paintFeaturedRail() {
+    const show =
+      state.communityFilter === "all" && !state.communityQuery.trim();
+    const featured = show ? scripts.filter((s) => s._featured) : [];
+    stopCarouselAutoplay();
+    carouselTrack.innerHTML = "";
+    carouselDots.innerHTML = "";
+    carouselIndex = 0;
+    carouselCount = featured.length;
+
+    if (!featured.length) {
+      carouselEl.hidden = true;
+      return;
+    }
+    carouselEl.hidden = false;
+    featured.forEach((s, i) => {
+      carouselTrack.appendChild(buildFeaturedSlide(s));
+      const dot = document.createElement("button");
+      dot.className = "cc-dot" + (i === 0 ? " active" : "");
+      dot.title = `Go to featured ${i + 1}`;
+      dot.onclick = () => {
+        goToSlide(i);
+        startCarouselAutoplay();
+      };
+      carouselDots.appendChild(dot);
+    });
+
+    const single = featured.length < 2;
+    carouselDots.hidden = single;
+    carouselPrev.hidden = single;
+    carouselNext.hidden = single;
+    startCarouselAutoplay();
+  }
+
+  function buildFeaturedSlide(s) {
+    const slide = document.createElement("div");
+    slide.className = "cc-slide";
+    const imageUrl = communityPreviewUrl(s);
+    const spec = communityBtnSpec(s);
+    slide.innerHTML = `
+      <div class="cc-media">
+        ${
+          imageUrl
+            ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(s.name || "Featured script preview")}">`
+            : `<div class="cc-media-ph">No preview image</div>`
+        }
+      </div>
+      <div class="cc-body">
+        <div class="cc-eyebrow">Featured</div>
+        <h3>${escapeHtml(s.name || "(untitled)")}</h3>
+        <div class="cc-author">by ${escapeHtml(s.author || "community")}</div>
+        <p class="cc-desc">${escapeHtml(s.description || "")}</p>
+        <div class="cc-actions">
+          <button class="accent-btn compact cc-install${spec.cls}"${spec.disabled ? " disabled" : ""}>${spec.label}</button>
+          <button class="gh-btn compact cc-details">Details</button>
+        </div>
+      </div>`;
+
+    const media = slide.querySelector(".cc-media img");
+    if (media) {
+      media.onerror = () => {
+        const ph = document.createElement("div");
+        ph.className = "cc-media-ph";
+        ph.textContent = "Preview unavailable";
+        media.replaceWith(ph);
+      };
+    }
+
+    const installBtn = slide.querySelector(".cc-install");
+    installBtn.onclick = (e) => {
+      e.stopPropagation();
+      handleCommunityInstallClick(s, installBtn);
+    };
+    slide.querySelector(".cc-details").onclick = (e) => {
+      e.stopPropagation();
+      openCommunityDetailModal(s);
+    };
+    slide.onclick = () => openCommunityDetailModal(s);
+    return slide;
+  }
+
+  carouselPrev.onclick = () => {
+    goToSlide(carouselIndex - 1);
+    startCarouselAutoplay();
+  };
+  carouselNext.onclick = () => {
+    goToSlide(carouselIndex + 1);
+    startCarouselAutoplay();
+  };
+  carouselEl.onmouseenter = stopCarouselAutoplay;
+  carouselEl.onmouseleave = startCarouselAutoplay;
+  // Keep the active dot in sync when the user swipes/scrolls the track manually.
+  let carouselScrollRaf = null;
+  carouselTrack.onscroll = () => {
+    if (carouselScrollRaf) cancelAnimationFrame(carouselScrollRaf);
+    carouselScrollRaf = requestAnimationFrame(() => {
+      const w = carouselTrack.clientWidth || 1;
+      carouselIndex = Math.round(carouselTrack.scrollLeft / w);
+      updateDots();
+    });
+  };
 
   async function toggleCommunityFavorite(script, button) {
     if (button) button.disabled = true;
-    const r = await window.api.toggleCommunityFavorite({
-      repo: script._source,
-      id: script.id,
-    });
+    const ok = await toggleScriptFavorite(communityFavoriteKey(script));
     if (button) button.disabled = false;
-    if (!r || !r.success) {
-      alert((r && r.error) || "Favorite update failed");
+    if (!ok) {
+      alert("Favorite update failed");
       return false;
     }
-    applyFavoritesResponse(r);
+    renderTabs();
+    paint();
     return true;
   }
 
@@ -892,7 +1819,9 @@ async function renderCommunity(root) {
     }
     state.installedIds.add(script.download_url);
     if (button) {
+      button.classList.remove("update");
       button.classList.add("installed");
+      button.disabled = true;
       button.textContent = "\u2713 Installed";
     }
     paint();
@@ -904,16 +1833,19 @@ async function renderCommunity(root) {
     bd.className = "modal-backdrop";
     const imageUrl = communityPreviewUrl(script);
     const contributors = formatContributors(script.contributors);
-    const isFavorite = state.favoriteCommunityIds.has(
+    const contactUrl = script.url || script.website || script.link || "";
+    const contactEmail = script.email || "";
+    const prettyUrl = String(contactUrl)
+      .replace(/^https?:\/\//, "")
+      .replace(/\/+$/, "");
+    const isFavorite = state.favorites.has(
       communityFavoriteKey(script),
     );
-    const isInstalled = state.installedIds.has(script.download_url);
+    const spec = communityBtnSpec(script);
     bd.innerHTML = `
       <div class="modal community-detail-modal">
-        <div class="modal-head compact icon-only">
-          <button class="icon-btn" id="m-close"></button>
-        </div>
-        <div class="modal-body community-detail-body">
+        <button class="icon-btn community-detail-close" id="m-close" title="Close"></button>
+        <div class="community-detail-scroll">
           <div class="community-detail-preview">
             ${
               imageUrl
@@ -921,7 +1853,12 @@ async function renderCommunity(root) {
                 : `<div class="community-detail-placeholder">No preview image</div>`
             }
           </div>
-          <div>
+          <div class="community-detail-content">
+            <div class="community-detail-meta">
+              ${script._featured ? `<span class="c-featured-badge">Featured</span>` : ""}
+              <span class="tag">v${escapeHtml(script.version || "1.0.0")}</span>
+              <span class="tag">${escapeHtml((script.category || "other").toLowerCase())}</span>
+            </div>
             <h2>${escapeHtml(script.name || "(untitled)")}</h2>
             <div class="community-detail-author">
               <span>by ${escapeHtml(script.author || "community")}</span>
@@ -931,17 +1868,26 @@ async function renderCommunity(root) {
                   : ""
               }
             </div>
+            ${
+              contactUrl || contactEmail
+                ? `<div class="community-detail-links">
+                    ${contactUrl ? `<button class="detail-link" data-href="${escapeHtml(contactUrl)}"><span class="detail-link-ico" data-ico="external"></span>${escapeHtml(prettyUrl)}</button>` : ""}
+                    ${contactEmail ? `<button class="detail-link" data-href="mailto:${escapeHtml(contactEmail)}"><span class="detail-link-ico" data-ico="external"></span>${escapeHtml(contactEmail)}</button>` : ""}
+                  </div>`
+                : ""
+            }
+            <div class="community-detail-desc">${
+              script.description
+                ? escapeHtml(script.description)
+                : `<span class="community-detail-desc-empty">No description provided.</span>`
+            }</div>
           </div>
-          <div class="community-detail-meta">
-            <span class="tag">v${escapeHtml(script.version || "1.0.0")}</span>
-            <span class="tag">${escapeHtml((script.category || "other").toLowerCase())}</span>
-          </div>
-          <p>${escapeHtml(script.description || "")}</p>
         </div>
         <div class="modal-foot community-detail-actions">
           <button class="gh-btn" id="m-favorite"></button>
+          <button class="gh-btn" id="m-run"><span id="ico-run"></span> Run without install</button>
           <button class="gh-btn" id="m-save"></button>
-          <button class="accent-btn${isInstalled ? " installed" : ""}" id="m-install">${isInstalled ? "\u2713 Installed" : "Install"}</button>
+          <button class="accent-btn${spec.cls}" id="m-install"${spec.disabled ? " disabled" : ""}>${spec.label}</button>
         </div>
       </div>`;
     document.body.appendChild(bd);
@@ -951,6 +1897,15 @@ async function renderCommunity(root) {
     bd.querySelector("#m-close").onclick = close;
     bd.addEventListener("click", (e) => {
       if (e.target === bd) close();
+    });
+
+    bd.querySelectorAll(".detail-link").forEach((link) => {
+      const ico = link.querySelector(".detail-link-ico");
+      if (ico) ico.appendChild(Ico(ico.dataset.ico || "external", { size: 12 }));
+      link.onclick = (e) => {
+        e.stopPropagation();
+        window.api.openUrl(link.dataset.href);
+      };
     });
 
     const previewImg = bd.querySelector(".community-detail-preview img");
@@ -967,7 +1922,7 @@ async function renderCommunity(root) {
 
     const favoriteBtn = bd.querySelector("#m-favorite");
     const paintFavoriteBtn = () => {
-      const active = state.favoriteCommunityIds.has(communityFavoriteKey(script));
+      const active = state.favorites.has(communityFavoriteKey(script));
       favoriteBtn.classList.toggle("active", active);
       favoriteBtn.replaceChildren(Ico("star", { size: 14, sw: 1.35 }));
       favoriteBtn.append(document.createTextNode(active ? " Favorited" : " Favorite"));
@@ -995,17 +1950,22 @@ async function renderCommunity(root) {
       }, 1600);
     };
 
+    const runBtn = bd.querySelector("#m-run");
+    runBtn.querySelector("#ico-run").appendChild(Ico("terminal", { size: 13 }));
+    runBtn.onclick = () =>
+      openRunModal({ downloadUrl: script.download_url, name: script.name });
+
     const installBtn = bd.querySelector("#m-install");
-    installBtn.disabled = isInstalled;
-    installBtn.onclick = () => installCommunityScript(script, installBtn);
+    installBtn.onclick = () => handleCommunityInstallClick(script, installBtn);
   }
 
   function paint() {
+    paintFeaturedRail();
     const q = state.communityQuery.toLowerCase();
     let filtered = scripts.filter((s) => {
       const favoriteKey = communityFavoriteKey(s);
       if (state.communityFilter === "__favorites") {
-        if (!state.favoriteCommunityIds.has(favoriteKey)) return false;
+        if (!state.favorites.has(favoriteKey)) return false;
       } else if (
         state.communityFilter !== "all" &&
         (s.category || "other").toLowerCase() !== state.communityFilter
@@ -1033,6 +1993,10 @@ async function renderCommunity(root) {
     }
 
     grid.innerHTML = "";
+    // Featured carousel is the first full-width row of the grid (see CSS
+    // grid-column: 1 / -1). It survives the innerHTML reset via its JS ref.
+    if (!carouselEl.hidden) grid.appendChild(carouselEl);
+
     if (filtered.length === 0) {
       const empty = document.createElement("div");
       empty.style.cssText =
@@ -1041,22 +2005,34 @@ async function renderCommunity(root) {
         ? `No scripts match "${q}".`
         : state.communityFilter === "__favorites"
           ? "No favorite scripts yet."
-        : "No scripts in this category.";
+          : "No scripts in this category.";
       grid.appendChild(empty);
       return;
     }
 
-    filtered.forEach((s) => {
-      const installed = state.installedIds.has(s.download_url);
+    filtered.forEach((s) => grid.appendChild(buildCommunityCard(s)));
+  }
+
+  function buildCommunityCard(s) {
+      const spec = communityBtnSpec(s);
       const favoriteKey = communityFavoriteKey(s);
-      const isFavorite = state.favoriteCommunityIds.has(favoriteKey);
+      const isFavorite = state.favorites.has(favoriteKey);
       const card = document.createElement("div");
       card.className = "c-card";
+      const imageUrl = communityPreviewUrl(s);
       const cardHtml = [];
+      if (imageUrl) {
+        cardHtml.push(`
+          <div class="c-card-preview">
+            <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(s.name || "Community script preview")}" loading="lazy">
+          </div>
+        `);
+      }
       cardHtml.push(`
         <div class="top-row">
           <h3>${escapeHtml(s.name || "(untitled)")}</h3>
           <div class="card-actions">
+            ${s._featured ? `<span class="c-featured-badge">Featured</span>` : ""}
             <span class="tag">v${escapeHtml(s.version || "1.0.0")}</span>
             <button class="icon-btn c-favorite${isFavorite ? " active" : ""}" title="${isFavorite ? "Remove from favorites" : "Add to favorites"}"></button>
           </div>
@@ -1067,11 +2043,21 @@ async function renderCommunity(root) {
           <span class="tag">${escapeHtml((s.category || "other").toLowerCase())}</span>
           <div style="display:flex; gap:6px; align-items:center;">
             <button class="icon-btn c-save" title="Save to My Scripts (don't install)"></button>
-            <button class="install-btn${installed ? " installed" : ""}">${installed ? "\u2713 Installed" : "Install"}</button>
+            <button class="install-btn${spec.cls}"${spec.disabled ? " disabled" : ""}>${spec.label}</button>
           </div>
         </div>
       `);
       card.innerHTML = cardHtml.join("");
+
+      const previewImg = card.querySelector(".c-card-preview img");
+      if (previewImg) {
+        previewImg.onerror = () => {
+          const ph = document.createElement("div");
+          ph.className = "c-card-preview-ph";
+          ph.textContent = "Preview unavailable";
+          previewImg.replaceWith(ph);
+        };
+      }
 
       const favoriteBtn = card.querySelector(".c-favorite");
       favoriteBtn.appendChild(Ico("star", { size: 14, sw: 1.35 }));
@@ -1096,13 +2082,12 @@ async function renderCommunity(root) {
       };
 
       const btn = card.querySelector(".install-btn");
-      btn.onclick = async (e) => {
+      btn.onclick = (e) => {
         e.stopPropagation();
-        await installCommunityScript(s, btn);
+        handleCommunityInstallClick(s, btn);
       };
       card.onclick = () => openCommunityDetailModal(s);
-      grid.appendChild(card);
-    });
+      return card;
   }
 
   renderTabs();
@@ -1334,6 +2319,11 @@ function openUploadModal() {
       return;
     }
     close();
+    if (!r.pushed) {
+      alert(
+        "Saved locally, but couldn't install into Affinity. Make sure the Affinity bridge (MCP) is running, then install it from My Scripts.",
+      );
+    }
     if (state.nav === "local") renderScreen();
   };
 }
@@ -1575,6 +2565,7 @@ async function renderEditor(root) {
     <div class="editor-header">
       <button class="gh-btn compact" id="ed-back">${backLabel}</button>
       <div class="editor-filename${isNew ? " new" : ""}">${filenameHtml}</div>
+      <button class="gh-btn compact" id="ed-run" title="Run this buffer in Affinity without installing"><span id="ed-run-ico"></span> Run</button>
       <button class="accent-btn compact" id="ed-save" disabled>Save</button>
     </div>
     <div class="editor-host" id="editor-host"></div>
@@ -1587,6 +2578,16 @@ async function renderEditor(root) {
   const host = screen.querySelector("#editor-host");
   const nameInput = screen.querySelector("#ed-filename"); // null when not isNew
   backBtn.onclick = () => navigate(origin);
+
+  const runBtn = screen.querySelector("#ed-run");
+  runBtn.querySelector("#ed-run-ico").appendChild(Ico("terminal", { size: 12 }));
+  runBtn.onclick = () => {
+    if (!activeEditor) return;
+    openRunModal({
+      code: activeEditor.getValue(),
+      name: isNew && nameInput ? nameInput.value.trim() || undefined : filename,
+    });
+  };
 
   if (!window.ace) {
     host.innerHTML = `<div style="padding:40px; color:var(--danger-text); font-size:13px;">
@@ -1707,9 +2708,6 @@ async function renderDevelop(root) {
 
     <div class="eyebrow" style="margin-bottom:12px">My Scripts</div>
     <div class="dev-list" id="dev-local"></div>
-
-    <div class="eyebrow" style="margin:28px 0 12px">Community — Fork &amp; Edit</div>
-    <div class="dev-list" id="dev-community"></div>
   `;
   root.appendChild(screen);
   screen
@@ -1758,70 +2756,5 @@ async function renderDevelop(root) {
       row.onclick = () => openEditor(it.file, "develop");
       localList.appendChild(row);
     }
-  }
-
-  // Community section — table list
-  const commList = screen.querySelector("#dev-community");
-  commList.innerHTML =
-    '<div class="dev-empty"><span class="loading">Fetching community registries</span></div>';
-  const commRes = await window.api.listCommunityScripts();
-  commList.innerHTML = "";
-  if (!commRes || !commRes.success) {
-    commList.innerHTML = `<div class="dev-empty">Error: ${escapeHtml((commRes && commRes.error) || "failed")}</div>`;
-    return;
-  }
-  const scripts = commRes.data || [];
-  if (scripts.length === 0) {
-    commList.innerHTML = `<div class="dev-empty">No community scripts.</div>`;
-    return;
-  }
-  for (const s of scripts) {
-    const row = document.createElement("div");
-    row.className = "dev-row community";
-
-    const iconCell = document.createElement("div");
-    iconCell.appendChild(Ico("file", { size: 14 }));
-
-    const nameCell = document.createElement("div");
-    const name = s.name || "(untitled)";
-    const author = s.author || "community";
-    nameCell.innerHTML =
-      `<div class="row-name">${escapeHtml(name)}</div>` +
-      `<div class="row-desc">by ${escapeHtml(author)}${s.description ? " · " + escapeHtml(s.description) : ""}</div>`;
-
-    const btnCell = document.createElement("div");
-    btnCell.style.textAlign = "right";
-    const btn = document.createElement("button");
-    btn.className = "gh-btn compact";
-    btn.textContent = "Fork & Edit";
-
-    const forkAndEdit = async (trigger) => {
-      const original = trigger.textContent;
-      trigger.innerHTML = '<span class="loading">Forking</span>';
-      trigger.disabled = true;
-      const r = await window.api.saveCommunityScript(
-        s.download_url,
-        s.name,
-        communityScriptMetadata(s),
-      );
-      if (!r || !r.success) {
-        alert((r && r.error) || "Fork failed");
-        trigger.textContent = original;
-        trigger.disabled = false;
-        return;
-      }
-      const safe =
-        (s.name || "script").toLowerCase().replace(/[^a-z0-9_-]/g, "-") + ".js";
-      openEditor(safe, "develop");
-    };
-    btn.onclick = (e) => {
-      e.stopPropagation();
-      forkAndEdit(btn);
-    };
-    btnCell.appendChild(btn);
-
-    row.append(iconCell, nameCell, btnCell);
-    row.onclick = () => forkAndEdit(btn);
-    commList.appendChild(row);
   }
 }
