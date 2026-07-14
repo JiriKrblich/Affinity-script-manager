@@ -1,5 +1,5 @@
 # Script Manager for Affinity
-![Cover photo with screenshot of Script Manager](readme/AffinityScriptManager_1.3.0_Overview.webp)
+![Cover photo with screenshot of Script Manager](readme/AffinityScriptManager_1.4.0_Overview.webp)
 
 ## Features
 
