@@ -281,6 +281,13 @@ async function ensureMcpConnected() {
   return mcpConnectPromise;
 }
 
+function isRecoverableMcpSessionError(error) {
+  const msg = error && error.message ? error.message : String(error);
+  return /session not initialized|session not found|not connected|disconnected|closed|http 404/i.test(
+    msg,
+  );
+}
+
 async function callTool(_clientIgnored, name, args) {
   await ensureMcpConnected();
   try {
@@ -290,10 +297,7 @@ async function callTool(_clientIgnored, name, args) {
     );
   } catch (err) {
     // If the session dropped (bridge restarted, etc.), reconnect once and retry.
-    const msg = err && err.message ? err.message : String(err);
-    if (
-      /session not initialized|not connected|disconnected|closed/i.test(msg)
-    ) {
+    if (isRecoverableMcpSessionError(err)) {
       mcpConnected = false;
       await ensureMcpConnected();
       return client.request(
