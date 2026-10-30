@@ -669,6 +669,23 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
     margin-bottom: 20px;
 }
 
+.app-settings-screen { max-width: 900px; }
+.settings-card { margin: 24px 0; padding: 22px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--bg-card); }
+.settings-card h2 { margin: 0 0 8px; font: 600 18px/1.3 var(--f-sans); }
+.settings-card p { color: var(--text-dim); line-height: 1.5; }
+.settings-path { padding: 12px; border: 1px solid var(--border); border-radius: var(--r-md); overflow-wrap: anywhere; font-family: monospace; background: var(--bg-app); }
+.settings-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.settings-folder-row { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-top: 1px solid var(--border); }
+.settings-folder-row span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.settings-empty { margin: 14px 0; }
+.settings-error { color: var(--warn); }
+.folder-change-modal { max-width: 620px; max-height: calc(100vh - 48px); }
+.folder-change-modal .modal-body { overflow-y: auto; }
+.folder-choice { display: flex; align-items: center; gap: 8px; margin: 12px 0; cursor: pointer; }
+.folder-conflict-row { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
+.folder-conflict-row span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.folder-conflict-row select { max-width: 55%; }
+
 /* ============================================================
    My Scripts — list view with state tags
    ============================================================ */
@@ -938,6 +955,8 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
     border-top: 1px solid var(--hair);
     transition: background 0.1s;
 }
+.watched-table .table-row { grid-template-columns: 36px minmax(180px, 2fr) 110px 80px minmax(180px, 2fr); }
+.watched-table .detail-link { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .table-row:first-child {
     border-top: none;
 }

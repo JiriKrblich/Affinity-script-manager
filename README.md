@@ -3,9 +3,11 @@
 
 ## Features
 
-* **My Scripts:** Your local `.js` library, safely stored in your system's native user data folder and shown with name, description, size, and last-modified time. Two tabs:
+* **My Scripts:** Your local `.js` library, stored in the default user data folder or a folder you choose and shown with name, description, size, and last-modified time. Three tabs:
   * **Local** — your scripts, each with an install dot (grey = not installed, green = active in Affinity). Click the dot (or the row) to push it into Affinity. Search, favorite, rename, edit, export, share, or delete from the row.
+  * **Watched** — scripts from extra folders you add in App Settings. Install them into Affinity from this tab; changes to installed scripts are watched for sync. Automatic sync is skipped when another library script has the same name.
   * **Just in Affinity** — scripts that live in Affinity but aren't in your local library (blue dot), with **Download to My Scripts** and **Download to folder**.
+* **App Settings:** Open or change the main scripts folder, restore its default location, and add or remove watched folders. When changing the main folder, choose whether to move existing scripts and how to handle each duplicate filename. Files left in the old location remain accessible through a watched folder.
 * **Bridge diagnostics ("More info"):** Live connection status, round-trip latency, and an event stream log for the local MCP bridge — tucked behind a **More info** button so it stays out of your way.
 * **Watch Mode:** Always-on file watcher. When you save a script that is already installed in Affinity, the app automatically re-pushes it — no manual step needed.
 * **Community Scripts:** Browse scripts from any GitHub-hosted registry. Image previews, a **Featured** carousel, filter by category, sort, and mark favorites. The install button reflects real state: **Install**, **Installed**, or **Update** when a newer version is available. Save-only mode downloads without installing.
@@ -27,6 +29,10 @@
 ## How to Use
 
 **Adding a script from disk:** Click **Add Script** in the sidebar, or drag one or more `.js` files anywhere onto the window. On drop, choose **Just save to My Scripts** or **Save & install**.
+
+**Finding or changing the scripts folder:** Click **Open folder** in My Scripts, or go to **App Settings** to change the main folder and add watched folders. The main folder receives new and downloaded scripts. A watched folder is listed separately and is not used as the destination for new scripts.
+
+**Windows installation:** The installer lets you choose installation for the current user or all users, and select the application installation directory. The application installation directory is separate from the scripts folder configured in App Settings.
 
 **Installing a script into Affinity:** In **My Scripts → Local**, click the grey dot on the left of any row (or click anywhere on the row). The dot turns green when the script is live in Affinity.
 

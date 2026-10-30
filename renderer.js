@@ -89,6 +89,10 @@ const NAV_SECTIONS = [
       },
     ],
   },
+  {
+    label: "Preferences",
+    items: [{ id: "app-settings", name: "App Settings", icon: "gear" }],
+  },
 ];
 
 function renderNav() {
@@ -167,6 +171,7 @@ async function renderScreen() {
     community: renderCommunity,
     develop: renderDevelop,
     docs: renderDocs,
+    "app-settings": renderAppSettings,
     editor: renderEditor,
   };
   const fn = dispatch[state.nav] || renderLocal;
@@ -262,10 +267,9 @@ window.addEventListener("DOMContentLoaded", () => {
   if (window.api.onLocalScriptsChanged) {
     window.api.onLocalScriptsChanged(() => {
       if (state.nav === "local") renderScreen();
-      window.api
-        .listLocalScripts()
-        .then((res) => {
-          if (res && res.success) updateNavCount("local", res.data.length);
+      Promise.all([window.api.listLocalScripts(), window.api.listWatchedScripts()])
+        .then(([local, watched]) => {
+          if (local?.success) updateNavCount("local", local.data.length + (watched?.data?.length || 0));
         })
         .catch(() => {});
     });
@@ -802,14 +806,158 @@ function openRunModal(opts = {}) {
 }
 
 // ---------- My Scripts screen ----------
+async function renderAppSettings(root) {
+  const screen = document.createElement("div");
+  screen.className = "screen app-settings-screen";
+  screen.innerHTML = `
+    <div class="eyebrow">Preferences</div>
+    <h1>App Settings</h1>
+    <p class="subhead">Choose where scripts are stored and which other folders appear in your library.</p>
+    <section class="settings-card">
+      <h2>Main scripts folder</h2>
+      <p>New and downloaded scripts are saved here. Changing this folder does not move scripts unless you choose to move them.</p>
+      <div class="settings-path" id="settings-main-path">Loading…</div>
+      <div class="settings-actions">
+        <button class="gh-btn" id="settings-open-main">Open folder</button>
+        <button class="gh-btn" id="settings-change-main">Change folder</button>
+        <button class="gh-btn" id="settings-reset-main">Use default</button>
+      </div>
+    </section>
+    <section class="settings-card">
+      <h2>Watched folders</h2>
+      <p>Scripts from these folders appear in My Scripts → Watched. Edits to scripts already installed in Affinity are synced when the files change. Use unique script names across folders so they do not overwrite each other in Affinity.</p>
+      <div id="settings-watched-list"></div>
+      <button class="gh-btn" id="settings-add-watched">Add watched folder</button>
+    </section>`;
+  root.appendChild(screen);
+
+  async function refresh() {
+    const result = await window.api.getScriptFolders();
+    if (!result?.success || !screen.isConnected) return;
+    const { primary, default: defaultPath, watched } = result.data;
+    screen.querySelector("#settings-main-path").textContent = primary;
+    screen.querySelector("#settings-reset-main").disabled = primary === defaultPath;
+    const list = screen.querySelector("#settings-watched-list");
+    list.innerHTML = "";
+    if (!watched.length) {
+      list.innerHTML = '<p class="settings-empty">No watched folders yet.</p>';
+    }
+    for (const folder of watched) {
+      const row = document.createElement("div");
+      row.className = "settings-folder-row";
+      const label = document.createElement("span");
+      label.textContent = folder;
+      const open = document.createElement("button");
+      open.className = "gh-btn compact";
+      open.textContent = "Open";
+      open.onclick = async () => {
+        const r = await window.api.openScriptFolder(folder);
+        if (!r?.success) alert(r?.error || "Could not open folder.");
+      };
+      const remove = document.createElement("button");
+      remove.className = "gh-btn compact";
+      remove.textContent = "Remove";
+      remove.onclick = async () => {
+        const r = await window.api.removeWatchedFolder(folder);
+        if (!r?.success) alert(r?.error || "Could not remove folder.");
+        else refresh();
+      };
+      row.append(label, open, remove);
+      list.appendChild(row);
+    }
+    screen.querySelector("#settings-open-main").onclick = async () => {
+      const r = await window.api.openScriptFolder();
+      if (!r?.success) alert(r?.error || "Could not open folder.");
+    };
+    screen.querySelector("#settings-change-main").onclick = async () => {
+      const chosen = await window.api.chooseScriptFolder();
+      if (!chosen?.success) return;
+      const plan = await window.api.planScriptFolderChange(chosen.path);
+      if (!plan?.success) return alert(plan?.error || "Could not inspect folder.");
+      if (!plan.data.same) openFolderChangeModal(plan.data, refresh);
+    };
+    screen.querySelector("#settings-reset-main").onclick = async () => {
+      const plan = await window.api.planScriptFolderChange(defaultPath);
+      if (!plan?.success) return alert(plan?.error || "Could not inspect default folder.");
+      if (!plan.data.same) openFolderChangeModal(plan.data, refresh);
+    };
+    screen.querySelector("#settings-add-watched").onclick = async () => {
+      const chosen = await window.api.chooseScriptFolder();
+      if (!chosen?.success) return;
+      const r = await window.api.addWatchedFolder(chosen.path);
+      if (!r?.success) alert(r?.error || "Could not add folder.");
+      else refresh();
+    };
+  }
+  refresh();
+}
+
+function openFolderChangeModal(plan, onDone) {
+  const bd = document.createElement("div");
+  bd.className = "modal-backdrop";
+  bd.innerHTML = `
+    <div class="modal folder-change-modal">
+      <div class="modal-head"><h3>Change scripts folder</h3><button class="icon-btn" id="m-close"></button></div>
+      <div class="modal-body">
+        <p class="settings-path">${escapeHtml(plan.target)}</p>
+        <p>${plan.sourceCount} script${plan.sourceCount === 1 ? "" : "s"} in the current folder; ${plan.targetCount} in the selected folder.</p>
+        ${plan.sourceError ? `<p class="settings-error">Current folder unavailable: ${escapeHtml(plan.sourceError)}. You can switch folders without moving files.</p>` : ""}
+        <label class="folder-choice"><input type="radio" name="folder-action" value="move" ${plan.sourceError ? "disabled" : "checked"}> Move current scripts to this folder</label>
+        <label class="folder-choice"><input type="radio" name="folder-action" value="keep" ${plan.sourceError ? "checked" : ""}> Leave current scripts in the old folder</label>
+        <p>Files left in the old folder remain available as a watched folder.</p>
+        <div id="folder-conflicts" ${plan.conflicts.length ? "" : "hidden"}>
+          <h4>Files with the same name</h4>
+          <p>Choose what to do with each duplicate in the selected folder.</p>
+          ${plan.conflicts.map((name, i) => `<div class="folder-conflict-row"><span>${escapeHtml(name)}</span><select data-index="${i}">
+            <option value="keep">Keep existing; leave old file in watched folder</option>
+            <option value="rename">Keep both; rename moved file</option>
+            <option value="replace">Replace existing file</option>
+          </select></div>`).join("")}
+        </div>
+      </div>
+      <div class="modal-foot"><button class="gh-btn" id="m-cancel">Cancel</button><button class="accent-btn" id="m-apply">Change folder</button></div>
+    </div>`;
+  document.body.appendChild(bd);
+  const close = () => bd.remove();
+  bd.querySelector("#m-close").appendChild(Ico("close", { size: 12 }));
+  bd.querySelector("#m-close").onclick = close;
+  bd.querySelector("#m-cancel").onclick = close;
+  bd.addEventListener("click", (e) => { if (e.target === bd) close(); });
+  const conflicts = bd.querySelector("#folder-conflicts");
+  bd.querySelectorAll('[name="folder-action"]').forEach((radio) => {
+    radio.onchange = () => { conflicts.hidden = radio.value === "keep" && radio.checked; };
+  });
+  bd.querySelector("#m-apply").onclick = async (e) => {
+    const button = e.currentTarget;
+    button.disabled = true;
+    button.textContent = "Changing…";
+    const move = bd.querySelector('[name="folder-action"]:checked').value === "move";
+    const choices = {};
+    bd.querySelectorAll("[data-index]").forEach((select) => {
+      choices[plan.conflicts[Number(select.dataset.index)]] = select.value;
+    });
+    const result = await window.api.applyScriptFolderChange(plan.target, move, choices);
+    if (!result?.success) {
+      button.disabled = false;
+      button.textContent = "Change folder";
+      alert(result?.error || "Could not change scripts folder.");
+      return;
+    }
+    close();
+    onDone();
+    if (result.data.leftBehind.length) alert(`${result.data.leftBehind.length} script(s) remain in the old folder, which is now watched.`);
+  };
+}
+
 async function renderLocal(root) {
   const screen = document.createElement("div");
   screen.className = "screen";
   screen.innerHTML = `
     <div class="eyebrow">Library</div>
-    <h1>My Scripts</h1>
+    <div class="screen-header"><h1>My Scripts</h1><button class="gh-btn compact" id="local-open-folder">Open folder</button></div>
     <p class="subhead" id="local-subhead">Loading…</p>
     <div class="local-statusline" id="local-status"></div>
+    <div id="local-errors"></div>
     <div class="search-bar" style="margin-bottom:16px;">
       <div class="search-wrap">
         <span id="local-search-ico"></span>
@@ -821,6 +969,10 @@ async function renderLocal(root) {
     <div id="local-content"></div>
   `;
   root.appendChild(screen);
+  screen.querySelector("#local-open-folder").onclick = async () => {
+    const result = await window.api.openScriptFolder();
+    if (!result?.success) alert(result?.error || "Could not open scripts folder.");
+  };
 
   // Skeleton rows while data loads (replaced once the tab content is built).
   screen.querySelector("#local-content").innerHTML =
@@ -828,19 +980,20 @@ async function renderLocal(root) {
 
   // Fetch local + bridge + community in parallel — bridge drives Active/Paused state,
   // community drives Update-available indication.
-  const [localRes, bridgeRes, commRes] = await Promise.all([
+  const [localRes, bridgeRes, commRes, watchedRes] = await Promise.all([
     window.api.listLocalScripts(),
     window.api.listMcpScripts().catch(() => ({ success: false })),
     window.api.listCommunityScripts().catch(() => ({ success: false })),
+    window.api.listWatchedScripts().catch(() => ({ success: false, data: [], errors: [] })),
   ]);
   if (!localRes.success) {
-    screen.querySelector("#local-table").textContent =
-      "Error: " + localRes.error;
-    return;
+    screen.querySelector("#local-errors").innerHTML =
+      `<p class="settings-error">Main scripts folder unavailable: ${escapeHtml(localRes.error || "Unknown error")}. Change it in App Settings.</p>`;
   }
-  const items = localRes.data;
+  const items = localRes.success ? localRes.data : [];
+  const watchedItems = watchedRes?.data || [];
   const totalBytes = items.reduce((a, b) => a + b.size, 0);
-  updateNavCount("local", items.length);
+  updateNavCount("local", items.length + watchedItems.length);
 
   const favRes = await window.api
     .getFavorites()
@@ -913,6 +1066,10 @@ async function renderLocal(root) {
     localStems.add(it.file.replace(/\.js$/i, "").toLowerCase());
     localStems.add((it.name || "").toLowerCase());
   }
+  for (const it of watchedItems) {
+    localStems.add(it.file.replace(/\.js$/i, "").toLowerCase());
+    localStems.add((it.name || "").toLowerCase());
+  }
   const isLocalTitle = (t) =>
     localStems.has(t.toLowerCase().replace(/[^a-z0-9_-]/g, "-")) ||
     localStems.has(t.toLowerCase());
@@ -945,6 +1102,7 @@ async function renderLocal(root) {
   function renderLocalTabs() {
     const defs = [
       { id: "local", label: "Local", count: items.length },
+      { id: "watched", label: "Watched", count: watchedItems.length },
       { id: "affinity", label: "Just in Affinity", count: orphans.length },
     ];
     tabsEl.innerHTML = "";
@@ -969,7 +1127,73 @@ async function renderLocal(root) {
     );
     contentEl.innerHTML = "";
     if (state.localTab === "affinity") buildAffinityOnly(contentEl);
+    else if (state.localTab === "watched") buildWatchedTable(contentEl);
     else buildLocalTable(contentEl);
+  }
+
+  function buildWatchedTable(container) {
+    const errors = watchedRes?.errors || [];
+    for (const issue of errors) {
+      const warning = document.createElement("p");
+      warning.className = "settings-error";
+      warning.textContent = `Cannot read ${issue.folder}: ${issue.error}`;
+      container.appendChild(warning);
+    }
+    const q = state.localQuery.trim().toLowerCase();
+    const list = watchedItems.filter((it) =>
+      !q || [it.name, it.file, it.folder, it.description].some((s) => String(s || "").toLowerCase().includes(q)));
+    const table = document.createElement("div");
+    table.className = "table watched-table";
+    table.innerHTML = '<div class="table-row header"><div class="col">Status</div><div class="col">Name</div><div class="col">Modified</div><div class="col">Size</div><div class="col">Folder</div></div>';
+    if (!list.length) {
+      const row = document.createElement("div");
+      row.className = "table-row";
+      row.textContent = watchedItems.length ? "No scripts match your search." : "No scripts in watched folders. Add a folder in App Settings.";
+      table.appendChild(row);
+    }
+    for (const it of list) {
+      const row = document.createElement("div");
+      row.className = "table-row";
+      const active = isActive(it);
+      const dotCell = document.createElement("div");
+      const dot = document.createElement("button");
+      dot.className = "install-dot" + (active ? " on" : "");
+      dot.title = active ? "Installed in Affinity" : "Install to Affinity";
+      dot.disabled = active || !bridgeOnline;
+      dot.onclick = async () => {
+        dot.disabled = true;
+        const result = await window.api.pushWatchedScript(it.folder, it.file);
+        if (result?.success) renderScreen();
+        else { alert(result?.error || "Install failed."); dot.disabled = false; }
+      };
+      dotCell.appendChild(dot);
+      const name = document.createElement("div");
+      name.className = "row-name";
+      name.textContent = it.name;
+      if (it.description) {
+        const description = document.createElement("div");
+        description.className = "row-desc";
+        description.textContent = it.description;
+        name.appendChild(description);
+      }
+      const modified = document.createElement("div");
+      modified.className = "row-meta";
+      modified.textContent = fmtRel(it.modified);
+      const size = document.createElement("div");
+      size.className = "row-meta";
+      size.textContent = fmtBytes(it.size);
+      const folder = document.createElement("button");
+      folder.className = "detail-link";
+      folder.textContent = it.folder;
+      folder.title = "Open watched folder";
+      folder.onclick = async () => {
+        const result = await window.api.openScriptFolder(it.folder);
+        if (!result?.success) alert(result?.error || "Could not open folder.");
+      };
+      row.append(dotCell, name, modified, size, folder);
+      table.appendChild(row);
+    }
+    container.appendChild(table);
   }
 
   function buildAffinityOnly(container) {

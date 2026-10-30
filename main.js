@@ -16,6 +16,9 @@ const COMMUNITY_ISSUES_URL =
 let client;
 let transport;
 let localScriptsDir;
+let defaultScriptsDir;
+let watchedScriptsDirs = [];
+let watcherControllers = [];
 let configPath;
 let win;
 const suppressWatchUntil = new Map();
@@ -388,6 +391,16 @@ async function getConfig() {
     config.sidebarCollapsed = false;
     needsSave = true;
   }
+  if (config.scriptsDirectory !== null &&
+      (typeof config.scriptsDirectory !== "string" || !path.isAbsolute(config.scriptsDirectory))) {
+    config.scriptsDirectory = null;
+    needsSave = true;
+  }
+  if (!Array.isArray(config.watchedFolders)) {
+    config.watchedFolders = [];
+    needsSave = true;
+  }
+  config.watchedFolders = [...new Set(config.watchedFolders.filter((p) => typeof p === "string" && path.isAbsolute(p)))];
 
   if (needsSave) await saveConfig(config);
   return config;
@@ -397,13 +410,151 @@ async function saveConfig(config) {
   await fs.writeFile(configPath, JSON.stringify(config, null, 2), "utf8");
 }
 
+function sameDirectory(a, b) {
+  const normalize = (p) => process.platform === "win32" ? path.resolve(p).toLowerCase() : path.resolve(p);
+  return normalize(a) === normalize(b);
+}
+
+async function scriptFiles(directory) {
+  return (await fs.readdir(directory, { withFileTypes: true }))
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".js"))
+    .map((entry) => entry.name);
+}
+
+async function folderChangePlan(target) {
+  if (typeof target !== "string" || !path.isAbsolute(target)) throw new Error("Choose an absolute folder path.");
+  const stat = await fs.stat(target);
+  if (!stat.isDirectory()) throw new Error("The selected path is not a folder.");
+  const source = localScriptsDir;
+  const sourceReal = await fs.realpath(source).catch(() => null);
+  const targetReal = await fs.realpath(target);
+  let sourceFiles = [];
+  let sourceError = null;
+  try { sourceFiles = await scriptFiles(source); }
+  catch (error) { sourceError = error.message; }
+  const targetFiles = await scriptFiles(target);
+  const key = (name) => process.platform === "win32" ? name.toLowerCase() : name;
+  const targetNames = new Set(targetFiles.map(key));
+  return {
+    source,
+    target,
+    same: sameDirectory(source, target) || (sourceReal && sameDirectory(sourceReal, targetReal)),
+    sourceCount: sourceFiles.length,
+    sourceError,
+    targetCount: targetFiles.length,
+    conflicts: sourceFiles.filter((name) => targetNames.has(key(name))),
+  };
+}
+
+async function moveScriptsToFolder(source, target, choices) {
+  const sourceFiles = await scriptFiles(source);
+  const targetFiles = await scriptFiles(target);
+  const key = (name) => process.platform === "win32" ? name.toLowerCase() : name;
+  const occupied = new Set(targetFiles.map(key));
+  const operations = [];
+  const skipped = [];
+  for (const name of sourceFiles) {
+    let destination = name;
+    let existing = occupied.has(key(name));
+    if (existing) {
+      const choice = choices?.[name];
+      if (choice === "keep") { skipped.push(name); continue; }
+      if (choice === "rename") {
+        const stem = path.parse(name).name;
+        let suffix = 1;
+        do { destination = `${stem}-imported-${suffix++}.js`; }
+        while (occupied.has(key(destination)));
+        existing = false;
+      } else if (choice !== "replace") {
+        throw new Error(`Choose how to handle duplicate ${name}.`);
+      }
+    }
+    occupied.add(key(destination));
+    operations.push({ name, destination, replace: existing });
+  }
+
+  const staging = await fs.mkdtemp(path.join(target, ".asm-migration-"));
+  const completed = [];
+  try {
+    for (let i = 0; i < operations.length; i++) {
+      await fs.copyFile(path.join(source, operations[i].name), path.join(staging, `new-${i}`));
+    }
+    for (let i = 0; i < operations.length; i++) {
+      const op = operations[i];
+      const destination = path.join(target, op.destination);
+      const backup = path.join(staging, `old-${i}`);
+      if (!op.replace) {
+        try { await fs.access(destination); throw new Error(`Destination changed during move: ${op.destination}`); }
+        catch (error) { if (error.code !== "ENOENT") throw error; }
+      }
+      if (op.replace) await fs.rename(destination, backup);
+      try {
+        await fs.rename(path.join(staging, `new-${i}`), destination);
+      } catch (error) {
+        if (op.replace) await fs.rename(backup, destination);
+        throw error;
+      }
+      completed.push({ destination, backup: op.replace ? backup : null });
+    }
+    return {
+      moved: operations.map((op) => op.name), skipped,
+      async rollback() {
+        for (const item of completed.reverse()) {
+          await fs.unlink(item.destination);
+          if (item.backup) await fs.rename(item.backup, item.destination);
+        }
+        await fs.rm(staging, { recursive: true, force: true });
+      },
+      async finish() {
+        await fs.rm(staging, { recursive: true, force: true }).catch(() => {});
+        const leftBehind = [...skipped];
+        for (const op of operations) {
+          try {
+            const original = await fs.readFile(path.join(source, op.name));
+            const copied = await fs.readFile(path.join(target, op.destination));
+            if (!original.equals(copied)) { leftBehind.push(op.name); continue; }
+            await fs.unlink(path.join(source, op.name));
+          } catch { leftBehind.push(op.name); }
+        }
+        return leftBehind;
+      },
+    };
+  } catch (error) {
+    for (const item of completed.reverse()) {
+      await fs.unlink(item.destination).catch(() => {});
+      if (item.backup) await fs.rename(item.backup, item.destination).catch(() => {});
+    }
+    await fs.rm(staging, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
+}
+
+async function hasDuplicateScriptTitle(currentPath, title) {
+  const normalized = String(title || "").toLowerCase();
+  for (const directory of new Set([localScriptsDir, ...watchedScriptsDirs])) {
+    let files;
+    try { files = await scriptFiles(directory); } catch { continue; }
+    for (const file of files) {
+      const full = path.join(directory, file);
+      if (full === currentPath) continue;
+      try {
+        const code = (await fs.readFile(full, "utf8")).slice(0, 4096);
+        const meta = parseScriptMetadata(code, path.parse(file).name);
+        if (meta.name.toLowerCase() === normalized) return true;
+      } catch {}
+    }
+  }
+  return false;
+}
+
 // --- Watch mode: re-push edited scripts to the bridge and notify the renderer ---
-async function startWatcher() {
+async function startWatcher(directory, signal) {
   const pending = new Map(); // filename -> timer (debounce)
 
   const handleChange = async (filename) => {
+    if (signal.aborted) return;
     if (!filename || !filename.endsWith(".js")) return;
-    const full = path.join(localScriptsDir, filename);
+    const full = path.join(directory, filename);
     let exists = false;
     try {
       await fs.stat(full);
@@ -415,7 +566,7 @@ async function startWatcher() {
       // newly-saved files stay local until the user explicitly clicks the
       // install dot in My Scripts.
       try {
-        if (Date.now() < (suppressWatchUntil.get(filename) || 0)) {
+        if (Date.now() < (suppressWatchUntil.get(full) || 0)) {
           if (win && !win.isDestroyed()) win.webContents.send("local-scripts-changed");
           return;
         }
@@ -423,10 +574,11 @@ async function startWatcher() {
         const titles = parseCsvTextContent(listResult).map((t) =>
           t.toLowerCase(),
         );
+        const code = await fs.readFile(full, "utf8");
+        const metadata = parseScriptMetadata(code, path.parse(filename).name);
         const stem = path.parse(filename).name.toLowerCase();
-        if (titles.includes(stem)) {
-          const code = await fs.readFile(full, "utf8");
-          const metadata = parseScriptMetadata(code, path.parse(filename).name);
+        if ((titles.includes(stem) || titles.includes(metadata.name.toLowerCase())) &&
+            !(await hasDuplicateScriptTitle(full, metadata.name))) {
           await callTool(client, "save_script_to_library", {
             title: metadata.name || path.parse(filename).name,
             description: metadata.description,
@@ -446,25 +598,54 @@ async function startWatcher() {
       filename,
       setTimeout(() => {
         pending.delete(filename);
-        handleChange(filename);
+        if (!signal.aborted) handleChange(filename);
       }, 300),
     );
   };
 
   try {
-    const watcher = fs.watch(localScriptsDir);
+    const watcher = fs.watch(directory, { signal });
     for await (const { filename } of watcher) {
       debounced(filename);
     }
   } catch (err) {
-    console.warn("watch mode error:", err.message);
+    if (err.name === "AbortError" || signal.aborted) return;
+    console.warn("watch mode falling back to polling:", directory, err.message);
+    const seen = new Map();
+    while (!signal.aborted) {
+      try {
+        const files = await scriptFiles(directory);
+        const present = new Set(files);
+        for (const filename of files) {
+          const stat = await fs.stat(path.join(directory, filename));
+          const marker = `${stat.mtimeMs}:${stat.size}`;
+          if (seen.has(filename) && seen.get(filename) !== marker) debounced(filename);
+          seen.set(filename, marker);
+        }
+        for (const filename of seen.keys()) if (!present.has(filename)) seen.delete(filename);
+      } catch {}
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
+  }
+}
+
+function restartWatchers() {
+  watcherControllers.forEach((controller) => controller.abort());
+  watcherControllers = [];
+  for (const directory of new Set([localScriptsDir, ...watchedScriptsDirs])) {
+    const controller = new AbortController();
+    watcherControllers.push(controller);
+    startWatcher(directory, controller.signal);
   }
 }
 
 app.whenReady().then(async () => {
-  localScriptsDir = path.join(app.getPath("userData"), "MyScripts");
+  defaultScriptsDir = path.join(app.getPath("userData"), "MyScripts");
   configPath = path.join(app.getPath("userData"), "config.json");
-  await fs.mkdir(localScriptsDir, { recursive: true });
+  await fs.mkdir(defaultScriptsDir, { recursive: true });
+  const startupConfig = await getConfig();
+  localScriptsDir = startupConfig.scriptsDirectory || defaultScriptsDir;
+  watchedScriptsDirs = startupConfig.watchedFolders;
 
   // Eagerly attempt to connect so the Server Bridge status is accurate on first paint;
   // failure is non-fatal — ensureMcpConnected() will retry on demand when a tool call
@@ -473,7 +654,7 @@ app.whenReady().then(async () => {
     console.warn("[MCP] initial connect failed:", err.message),
   );
 
-  startWatcher(); // fire-and-forget
+  restartWatchers(); // fire-and-forget
 
   win = new BrowserWindow({
     width: 1200,
@@ -497,6 +678,125 @@ app.whenReady().then(async () => {
   // ==========================================
   // --- LOCAL SCRIPTS & MCP ---
   // ==========================================
+
+  ipcMain.handle("get-script-folders", async () => ({
+    success: true,
+    data: { primary: localScriptsDir, default: defaultScriptsDir, watched: watchedScriptsDirs },
+  }));
+
+  ipcMain.handle("open-script-folder", async (event, folder) => {
+    try {
+      const selected = folder || localScriptsDir;
+      if (![localScriptsDir, ...watchedScriptsDirs].some((p) => sameDirectory(p, selected)))
+        throw new Error("Folder is not in the library.");
+      const error = await shell.openPath(selected);
+      if (error) throw new Error(error);
+      return { success: true };
+    } catch (error) { return { success: false, error: error.message }; }
+  });
+
+  ipcMain.handle("choose-script-folder", async () => {
+    const result = await dialog.showOpenDialog(win, {
+      properties: ["openDirectory"], defaultPath: localScriptsDir,
+    });
+    return result.canceled ? { success: false, canceled: true } : { success: true, path: result.filePaths[0] };
+  });
+
+  ipcMain.handle("plan-script-folder-change", async (event, target) => {
+    try { return { success: true, data: await folderChangePlan(target) }; }
+    catch (error) { return { success: false, error: error.message }; }
+  });
+
+  ipcMain.handle("apply-script-folder-change", async (event, target, move, choices) => {
+    try {
+      const plan = await folderChangePlan(target);
+      if (plan.same) return { success: true, data: { ...plan, leftBehind: [] } };
+      if (move && plan.sourceError) throw new Error(`Cannot move scripts from the current folder: ${plan.sourceError}`);
+      const config = await getConfig();
+      const migration = move ? await moveScriptsToFolder(plan.source, plan.target, choices) : null;
+      config.scriptsDirectory = sameDirectory(target, defaultScriptsDir) ? null : target;
+      const oldWatched = config.watchedFolders;
+      config.watchedFolders = oldWatched.filter((p) => !sameDirectory(p, target));
+      if (((!move && plan.sourceCount) || migration?.skipped.length) && !config.watchedFolders.some((p) => sameDirectory(p, plan.source)))
+        config.watchedFolders.push(plan.source);
+      try { await saveConfig(config); }
+      catch (error) {
+        if (migration) await migration.rollback();
+        throw error;
+      }
+      localScriptsDir = target;
+      watchedScriptsDirs = config.watchedFolders;
+      restartWatchers();
+      const leftBehind = migration ? await migration.finish() : plan.sourceCount ? await scriptFiles(plan.source) : [];
+      if (leftBehind.length && !config.watchedFolders.some((p) => sameDirectory(p, plan.source))) {
+        config.watchedFolders.push(plan.source);
+        await saveConfig(config);
+        watchedScriptsDirs = config.watchedFolders;
+        restartWatchers();
+      }
+      win.webContents.send("local-scripts-changed");
+      return { success: true, data: { primary: target, leftBehind } };
+    } catch (error) { return { success: false, error: error.message }; }
+  });
+
+  ipcMain.handle("add-watched-folder", async (event, folder) => {
+    try {
+      if (typeof folder !== "string" || !path.isAbsolute(folder)) throw new Error("Invalid folder path.");
+      if (!(await fs.stat(folder)).isDirectory()) throw new Error("Selected path is not a folder.");
+      if (sameDirectory(folder, localScriptsDir) ||
+          await fs.realpath(folder) === await fs.realpath(localScriptsDir).catch(() => null))
+        throw new Error("This is already the main scripts folder.");
+      const config = await getConfig();
+      if (!config.watchedFolders.some((p) => sameDirectory(p, folder))) config.watchedFolders.push(folder);
+      await saveConfig(config);
+      watchedScriptsDirs = config.watchedFolders;
+      restartWatchers();
+      win.webContents.send("local-scripts-changed");
+      return { success: true };
+    } catch (error) { return { success: false, error: error.message }; }
+  });
+
+  ipcMain.handle("remove-watched-folder", async (event, folder) => {
+    try {
+      const config = await getConfig();
+      config.watchedFolders = config.watchedFolders.filter((p) => !sameDirectory(p, folder));
+      await saveConfig(config);
+      watchedScriptsDirs = config.watchedFolders;
+      restartWatchers();
+      win.webContents.send("local-scripts-changed");
+      return { success: true };
+    } catch (error) { return { success: false, error: error.message }; }
+  });
+
+  ipcMain.handle("list-watched-scripts", async () => {
+    const data = [];
+    const errors = [];
+    for (const folder of watchedScriptsDirs) {
+      try {
+        for (const file of await scriptFiles(folder)) {
+          const full = path.join(folder, file);
+          const stat = await fs.stat(full);
+          const code = await fs.readFile(full, "utf8");
+          data.push({ folder, file, ...parseScriptMetadata(code, path.parse(file).name),
+            size: stat.size, modified: stat.mtimeMs });
+        }
+      } catch (error) { errors.push({ folder, error: error.message }); }
+    }
+    return { success: true, data, errors };
+  });
+
+  ipcMain.handle("push-watched-script", async (event, folder, filename) => {
+    try {
+      if (!watchedScriptsDirs.some((p) => sameDirectory(p, folder))) throw new Error("Folder is not watched.");
+      const file = assertLocalScriptFilename(filename);
+      const code = await fs.readFile(path.join(folder, file), "utf8");
+      const meta = parseScriptMetadata(code, path.parse(file).name);
+      await callTool(client, "save_script_to_library", {
+        title: meta.name, description: meta.description, code,
+      });
+      return { success: true };
+    } catch (error) { return { success: false, error: error.message }; }
+  });
 
   ipcMain.handle("list-local-scripts", async () => {
     try {
@@ -1029,7 +1329,7 @@ app.whenReady().then(async () => {
           }
         }
         if (!backedUp) throw new Error("Could not back up the current script.");
-        suppressWatchUntil.set(filename, Date.now() + 3000);
+        suppressWatchUntil.set(fullPath, Date.now() + 3000);
         await fs.writeFile(fullPath, historicalCode, "utf8");
         return { success: true, filename, backup, version: meta.version };
       }
