@@ -10,7 +10,7 @@
 * **App Settings:** Open or change the main scripts folder, restore its default location, add or remove watched folders, and manage community repositories. When changing the main folder, choose whether to move existing scripts and how to handle each duplicate filename. Files left in the old location remain accessible through a watched folder.
 * **Bridge diagnostics ("More info"):** Live connection status, round-trip latency, and an event stream log for the local MCP bridge — tucked behind a **More info** button so it stays out of your way.
 * **Watch Mode:** Always-on file watcher. When you save a script that is already installed in Affinity, the app automatically re-pushes it — no manual step needed.
-* **Community Scripts:** Browse scripts from any GitHub-hosted registry. Image previews, a **Featured** carousel, filter by category, sort, and mark favorites. The install button reflects real state: **Install**, **Installed**, or **Update** when a newer version is available. Save-only mode downloads without installing.
+* **Community Scripts:** Browse scripts from any GitHub-hosted registry. Image previews, a **Featured** carousel, filter by category and library status, sort, and mark favorites. The action button shows **Install**, **In library**, or **Update** when a newer version is available. Save-only mode downloads without installing.
 * **Script history:** In a GitHub-hosted community script's details, open **Version history** to view its 10 most recent file revisions. Save any revision as a separate copy, install it if the script is not local yet, or downgrade the local script after creating a backup. Downgrading does not replace an existing copy inside Affinity. History follows the current file path, so revisions before a file rename or move may not appear.
 * **Run without install:** Open a community script's details (or the Code Editor) and run it in Affinity right away to see the console output *and* a rendered preview — before adding it to your library.
 * **Share to the community:** Publish a local or Affinity script to the community repository straight from the app. It prepares a ready-to-submit GitHub issue and copies it to your clipboard — no tokens, your GitHub credentials never touch the app.
@@ -44,7 +44,7 @@
 
 **Writing a new script:** Go to **Code Editor** and click **New Script**. A blank buffer opens with a pre-filled metadata header. Give it a name, write your code, then save.
 
-**Community scripts:** Open the **Community** tab. Browse, filter, or search (`⌘K`). Click **Install** to save to your library and push to Affinity at once, or the save icon to download only. Click a card to open its details, where you can **Run without install** to preview what a script does before adding it.
+**Community scripts:** Open the **Community** tab. Browse by category, use the library status filter (**All**, **In library**, **Not in library**, **Updates available**), or search (`⌘K`). Click **Install** to save to your library and push to Affinity at once, or the save icon to download only. Click a card to open its details, where you can **Run without install** to preview what a script does before adding it.
 
 **Sharing your script:** Click the **Share** (GitHub) action on any local or Affinity script, or **Submit Script** in the Community tab. The app copies a ready-to-submit contribution to your clipboard and opens a GitHub issue — paste it in and submit.
 

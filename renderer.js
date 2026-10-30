@@ -7,9 +7,9 @@ const state = {
   communityQuery: "",
   communityFilter: "all",
   communitySort: "name",
+  communityLibraryFilter: "all",
   // Unified favorites, keyed by script stem — shared by My Scripts + Community.
   favorites: new Set(),
-  installedIds: new Set(),
   editorFile: null,
   editorDirty: false,
   editorOrigin: "local", // 'local' | 'develop' — where the editor's Back button should return to
@@ -1767,6 +1767,14 @@ async function renderCommunity(root) {
           <span class="kbd">⌘K</span>
         </div>
         <div class="sort">
+          <select id="c-library-filter" aria-label="Filter by library status">
+            <option value="all">All library states</option>
+            <option value="present">In library</option>
+            <option value="missing">Not in library</option>
+            <option value="update">Updates available</option>
+          </select>
+        </div>
+        <div class="sort">
           <select id="c-sort">
             <option value="recent">Recently Added</option>
             <option value="name">A — Z</option>
@@ -1834,22 +1842,29 @@ async function renderCommunity(root) {
   //   install    — not in the library yet
   //   installed  — in the library at the same/newer version (grey, no action)
   //   update     — in the library but the community has a newer version (orange)
-  const localRes = await window.api
-    .listLocalScripts()
-    .catch(() => ({ success: false }));
+  // Watched folders count as library presence, but updates are applied only to
+  // scripts in the main writable folder.
+  const [localRes, watchedRes] = await Promise.all([
+    window.api.listLocalScripts().catch(() => ({ success: false })),
+    window.api.listWatchedScripts().catch(() => ({ success: false })),
+  ]);
   const localByStem = new Map();
+  const indexLocal = (it) => {
+    localByStem.set(it.file.replace(/\.js$/i, "").toLowerCase(), it);
+    if (it.name)
+      localByStem.set(it.name.toLowerCase().replace(/[^a-z0-9_-]/g, "-"), it);
+  };
+  if (watchedRes?.success && Array.isArray(watchedRes.data)) {
+    for (const it of watchedRes.data) indexLocal({ ...it, watched: true });
+  }
   if (localRes && localRes.success && Array.isArray(localRes.data)) {
-    for (const it of localRes.data) {
-      localByStem.set(it.file.replace(/\.js$/i, "").toLowerCase(), it);
-      if (it.name)
-        localByStem.set(it.name.toLowerCase().replace(/[^a-z0-9_-]/g, "-"), it);
-    }
+    for (const it of localRes.data) indexLocal(it);
   }
   function communityInstallState(s) {
-    if (state.installedIds.has(s.download_url)) return "installed";
     const stem = (s.name || "").toLowerCase().replace(/[^a-z0-9_-]/g, "-");
     const local = localByStem.get(stem);
     if (!local) return "install";
+    if (local.watched) return "installed";
     if (s.version && local.version && cmpVer(local.version, s.version) < 0)
       return "update";
     return "installed";
@@ -1858,7 +1873,7 @@ async function renderCommunity(root) {
   function communityBtnSpec(s) {
     const st = communityInstallState(s);
     if (st === "installed")
-      return { cls: " installed", label: "✓ Installed", disabled: true };
+      return { cls: " installed", label: "✓ In library", disabled: true };
     if (st === "update")
       return { cls: " update", label: "↑ Update", disabled: false };
     return { cls: "", label: "Install", disabled: false };
@@ -1947,6 +1962,12 @@ async function renderCommunity(root) {
     state.communitySort = e.target.value;
     paint();
   };
+  const libraryFilterSel = screen.querySelector("#c-library-filter");
+  libraryFilterSel.value = state.communityLibraryFilter;
+  libraryFilterSel.onchange = (e) => {
+    state.communityLibraryFilter = e.target.value;
+    paint();
+  };
 
   const grid = screen.querySelector("#c-grid");
   const carouselEl = screen.querySelector("#c-featured");
@@ -1995,7 +2016,9 @@ async function renderCommunity(root) {
   // search, so it promotes curated picks without cluttering filtered results.
   function paintFeaturedRail() {
     const show =
-      state.communityFilter === "all" && !state.communityQuery.trim();
+      state.communityFilter === "all" &&
+      state.communityLibraryFilter === "all" &&
+      !state.communityQuery.trim();
     const featured = show ? scripts.filter((s) => s._featured) : [];
     stopCarouselAutoplay();
     carouselTrack.innerHTML = "";
@@ -2120,11 +2143,12 @@ async function renderCommunity(root) {
       if (button) button.disabled = false;
       return false;
     }
+    indexLocal({ file: `${scriptStem(script.name)}.js`, name: script.name, version: script.version });
+    paint();
     return true;
   }
 
   async function installCommunityScript(script, button) {
-    if (state.installedIds.has(script.download_url)) return true;
     if (button) {
       button.innerHTML = '<span class="loading">Installing</span>';
       button.disabled = true;
@@ -2142,12 +2166,12 @@ async function renderCommunity(root) {
       }
       return false;
     }
-    state.installedIds.add(script.download_url);
+    indexLocal({ file: `${scriptStem(script.name)}.js`, name: script.name, version: script.version });
     if (button) {
       button.classList.remove("update");
       button.classList.add("installed");
       button.disabled = true;
-      button.textContent = "\u2713 Installed";
+      button.textContent = "\u2713 In library";
     }
     paint();
     return true;
@@ -2368,6 +2392,10 @@ async function renderCommunity(root) {
     paintFeaturedRail();
     const q = state.communityQuery.toLowerCase();
     let filtered = scripts.filter((s) => {
+      const libraryState = communityInstallState(s);
+      if (state.communityLibraryFilter === "missing" && libraryState !== "install") return false;
+      if (state.communityLibraryFilter === "present" && libraryState === "install") return false;
+      if (state.communityLibraryFilter === "update" && libraryState !== "update") return false;
       const favoriteKey = communityFavoriteKey(s);
       if (state.communityFilter === "__favorites") {
         if (!state.favorites.has(favoriteKey)) return false;
@@ -2406,11 +2434,16 @@ async function renderCommunity(root) {
       const empty = document.createElement("div");
       empty.style.cssText =
         "grid-column: 1/-1; text-align:center; padding:48px; color:var(--text-faint); font-size:13px;";
-      empty.textContent = q
-        ? `No scripts match "${q}".`
-        : state.communityFilter === "__favorites"
-          ? "No favorite scripts yet."
-          : "No scripts in this category.";
+      if (q) empty.textContent = `No scripts match "${q}" with the current filters.`;
+      else if (state.communityLibraryFilter === "missing")
+        empty.textContent = "All scripts in this category are already in your library.";
+      else if (state.communityLibraryFilter === "present")
+        empty.textContent = "No scripts in this category are in your library yet.";
+      else if (state.communityLibraryFilter === "update")
+        empty.textContent = "No updates available in this category.";
+      else if (state.communityFilter === "__favorites")
+        empty.textContent = "No favorite scripts yet.";
+      else empty.textContent = "No scripts in this category.";
       grid.appendChild(empty);
       return;
     }
