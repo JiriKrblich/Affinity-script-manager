@@ -99,6 +99,7 @@ const NAV_SECTIONS = [
   {
     label: "nav.support",
     items: [
+      { id: "affinity-status", name: "nav.affinityStatus", icon: "plug" },
       { id: "docs", name: "nav.documentation", icon: "book" },
       { id: "resources", name: "nav.resources", icon: "link" },
       {
@@ -192,6 +193,7 @@ async function renderScreen() {
     community: renderCommunity,
     develop: renderDevelop,
     docs: renderDocs,
+    "affinity-status": renderAffinityStatus,
     resources: renderResources,
     "app-settings": renderAppSettings,
     editor: renderEditor,
@@ -1190,7 +1192,7 @@ async function renderLocal(root) {
     <div class="eyebrow">${escapeHtml(t("nav.library"))}</div>
     <div class="screen-header"><h1>${escapeHtml(t("nav.myScripts"))}</h1><button class="gh-btn compact" id="local-open-folder">${escapeHtml(t("settings.openFolder"))}</button></div>
     <p class="subhead" id="local-subhead">${escapeHtml(t("common.loading"))}</p>
-    <div class="local-statusline" id="local-status"></div>
+    <div id="local-status"></div>
     <div id="local-errors"></div>
     <div class="search-bar" style="margin-bottom:16px;">
       <div class="search-wrap">
@@ -1255,7 +1257,6 @@ async function renderLocal(root) {
     const name = (it.name || "").toLowerCase();
     return bridgeTitles.has(stem) || bridgeTitles.has(name);
   };
-  const activeCount = bridgeOnline ? items.filter(isActive).length : 0;
 
   // Community lookup — stem-key → {version, download_url, name}.
   const communityMap = new Map();
@@ -1277,14 +1278,12 @@ async function renderLocal(root) {
   screen.querySelector("#local-subhead").textContent = t("local.summary", {
     count: items.length, size: fmtBytes(totalBytes),
   });
-  screen.querySelector("#local-status").innerHTML = `
-    <span class="status-dot ${bridgeOnline ? "on" : ""}"></span>
-    <span>${escapeHtml(bridgeOnline ? t("local.connected", { count: activeCount }) : t("local.disconnected"))}</span>
-    <span class="sl-sep">·</span>
-    <span>${escapeHtml(t("local.watchOn"))}</span>
-    <button class="sl-more" id="btn-bridge-info">${escapeHtml(t("local.moreInfo"))}</button>
-  `;
-  screen.querySelector("#btn-bridge-info").onclick = openBridgeModal;
+  const statusEl = screen.querySelector("#local-status");
+  if (bridgeOnline) statusEl.remove();
+  else {
+    statusEl.className = "settings-error";
+    statusEl.textContent = t("affinityStatus.offlineMyScripts");
+  }
 
   // Grouped "updates available" panel — data only; painted per active tab.
   const pendingUpdates = items
@@ -1333,6 +1332,9 @@ async function renderLocal(root) {
   const tabsEl = screen.querySelector("#local-tabs");
   const contentEl = screen.querySelector("#local-content");
   const updatesEl = screen.querySelector("#local-updates");
+  const matchesLocalQuery = (it, query) =>
+    !query || [it.name, it.description, it.file].some((value) =>
+      String(value || "").toLowerCase().includes(query));
 
   function renderLocalTabs() {
     const defs = [
@@ -1356,9 +1358,12 @@ async function renderLocal(root) {
 
   function paintLocalTab() {
     // The updates panel is about local scripts, so only on the My Scripts tab.
+    const query = state.localQuery.trim().toLowerCase();
     renderUpdatesPanel(
       updatesEl,
-      state.localTab === "local" ? pendingUpdates : [],
+      state.localTab === "local"
+        ? pendingUpdates.filter(({ it }) => matchesLocalQuery(it, query))
+        : [],
     );
     contentEl.innerHTML = "";
     if (state.localTab === "affinity") buildAffinityOnly(contentEl);
@@ -1452,7 +1457,7 @@ async function renderLocal(root) {
     };
     if (!bridgeOnline)
       return emptyRow(
-        "Affinity isn't connected — open More info to check the bridge.",
+        t("affinityStatus.offlineMyScripts"),
       );
     if (orphans.length === 0)
       return emptyRow("Every script in Affinity is already in your library.");
@@ -1526,11 +1531,7 @@ async function renderLocal(root) {
   function buildLocalTable(container) {
     const q = state.localQuery.trim().toLowerCase();
     let list = q
-      ? items.filter((it) =>
-          [it.name, it.description, it.file].some((v) =>
-            (v || "").toLowerCase().includes(q),
-          ),
-        )
+      ? items.filter((it) => matchesLocalQuery(it, q))
       : items.slice();
     // Favorites float to the top (stable sort keeps the rest in place).
     list.sort(
@@ -1549,6 +1550,7 @@ async function renderLocal(root) {
     if (list.length === 0) {
       const empty = document.createElement("div");
       empty.className = "table-row";
+      empty.style.display = "block";
       empty.style.padding = "48px 20px";
       empty.style.color = "var(--text-faint)";
       empty.textContent =
@@ -1732,74 +1734,6 @@ async function renderLocal(root) {
 
   renderLocalTabs();
   paintLocalTab();
-}
-
-// "More info" modal: Affinity bridge connection diagnostics + event stream.
-// (Scripts that are only in Affinity now live in the "Just in Affinity" tab.)
-function openBridgeModal() {
-  const bd = document.createElement("div");
-  bd.className = "modal-backdrop";
-  bd.innerHTML = `
-    <div class="modal bridge-modal">
-      <div class="modal-head">
-        <h3>Affinity connection</h3>
-        <button class="icon-btn" id="m-close"></button>
-      </div>
-      <div class="modal-body">
-        <div class="bridge-info">
-          <div class="bridge-info-row"><span class="k">Address</span><span class="v">localhost:6767</span></div>
-          <div class="bridge-info-row"><span class="k">Bridge version</span><span class="v">1.0.0</span></div>
-          <div class="bridge-info-row"><span class="k">Latency</span><span class="v" id="bm-latency">—</span></div>
-          <div class="bridge-info-row"><span class="k">Status</span><span class="v bm-status-cell"><span class="status-dot" id="bm-dot"></span><span id="bm-status"><span class="loading">checking</span></span></span></div>
-        </div>
-
-        <div class="bridge-section-head">
-          <span class="eyebrow">Event Stream</span>
-          <button class="gh-btn compact" id="bm-refresh">Refresh</button>
-        </div>
-        <div class="event-log" id="bm-log"></div>
-      </div>
-    </div>`;
-  bd.querySelector("#m-close").appendChild(Ico("close", { size: 12 }));
-  document.body.appendChild(bd);
-
-  const close = () => bd.remove();
-  bd.querySelector("#m-close").onclick = close;
-  bd.addEventListener("click", (e) => {
-    if (e.target === bd) close();
-  });
-
-  const log = bd.querySelector("#bm-log");
-  const pushEvent = (tag, msg) => {
-    const line = document.createElement("div");
-    line.className = "event-line";
-    const now = new Date().toTimeString().slice(0, 8);
-    line.innerHTML = `<span class="t">${now}</span><span class="tag-${tag}">${tag.toUpperCase()}</span><span class="msg">${escapeHtml(msg)}</span>`;
-    log.prepend(line);
-  };
-
-  async function load() {
-    pushEvent("info", "Attaching to bridge…");
-    const start = performance.now();
-    const bridgeRes = await window.api.listMcpScripts();
-    const elapsed = Math.round(performance.now() - start);
-    bd.querySelector("#bm-latency").textContent = `${elapsed} ms`;
-
-    const dot = bd.querySelector("#bm-dot");
-    const statusEl = bd.querySelector("#bm-status");
-    if (bridgeRes && bridgeRes.success) {
-      dot.classList.add("on");
-      statusEl.textContent = "online";
-      pushEvent("ok", `connected · ${elapsed}ms round-trip`);
-    } else {
-      dot.classList.remove("on");
-      statusEl.textContent = "offline";
-      pushEvent("warn", (bridgeRes && bridgeRes.error) || "bridge unreachable");
-    }
-  }
-
-  bd.querySelector("#bm-refresh").onclick = load;
-  load();
 }
 
 // ---------- Community Scripts screen ----------
@@ -2718,6 +2652,83 @@ async function renderCommunity(root) {
       if (state.nav === "community") renderScreen();
     });
   }
+}
+
+// ---------- Affinity status ----------
+function renderAffinityStatus(root) {
+  const screen = document.createElement("div");
+  screen.className = "screen affinity-status-screen";
+  screen.innerHTML = `
+    <div class="eyebrow">${escapeHtml(t("nav.support"))}</div>
+    <div class="affinity-status-header">
+      <div><h1>${escapeHtml(t("nav.affinityStatus"))}</h1><p class="subhead">${escapeHtml(t("affinityStatus.subtitle"))}</p></div>
+      <button class="gh-btn" id="affinity-status-refresh">${escapeHtml(t("affinityStatus.refresh"))}</button>
+    </div>
+    <div id="affinity-status-content" aria-live="polite"></div>
+    <details class="event-stream affinity-status-events">
+      <summary>${escapeHtml(t("affinityStatus.eventStream"))}</summary>
+      <div class="event-log" id="affinity-status-log"></div>
+    </details>
+  `;
+  root.appendChild(screen);
+  const button = screen.querySelector("#affinity-status-refresh");
+  const content = screen.querySelector("#affinity-status-content");
+  const log = screen.querySelector("#affinity-status-log");
+  const pushEvent = (tag, message) => {
+    const line = document.createElement("div");
+    line.className = "event-line";
+    line.innerHTML = `<span class="t">${new Date().toTimeString().slice(0, 8)}</span><span class="tag-${tag}">${tag.toUpperCase()}</span><span class="msg">${escapeHtml(message)}</span>`;
+    log.prepend(line);
+    while (log.children.length > 20) log.lastElementChild.remove();
+  };
+  const check = async () => {
+    button.disabled = true;
+    content.innerHTML = `<div class="affinity-status-loading loading-indicator">${escapeHtml(t("affinityStatus.checking"))}</div>`;
+    pushEvent("info", t("affinityStatus.checking"));
+    const result = await window.api.getAffinityHealth();
+    if (!screen.isConnected) return;
+    button.disabled = false;
+    if (!result?.success) {
+      pushEvent("warn", result?.error || t("affinityStatus.disconnected"));
+      content.innerHTML = `
+        <div class="affinity-status-card">
+          <h2>${escapeHtml(t("affinityStatus.connection"))}</h2>
+          <div class="affinity-status-row"><span>${escapeHtml(t("affinityStatus.address"))}</span><span>localhost:6767</span></div>
+          <div class="affinity-status-row"><span>${escapeHtml(t("affinityStatus.status"))}</span><span class="affinity-status-badge bad">${escapeHtml(t("affinityStatus.disconnected"))}</span></div>
+          <p>${escapeHtml(t("affinityStatus.offlineHelp"))}</p>
+          <p class="affinity-status-error">${escapeHtml(result?.error || "")}</p>
+        </div>`;
+      return;
+    }
+    const { permissions, roots, desktopPath, desktopAllowed, latencyMs, serverVersion } = result.data;
+    pushEvent("ok", t("affinityStatus.connectedIn", { ms: latencyMs }));
+    const permissionRow = (label, enabled) => `<div class="affinity-status-row"><span>${escapeHtml(t(label))}</span><span class="affinity-status-badge ${enabled ? "good" : "bad"}">${escapeHtml(t(enabled ? "affinityStatus.allowed" : "affinityStatus.denied"))}</span></div>`;
+    content.innerHTML = `
+      <div class="affinity-status-card">
+        <h2>${escapeHtml(t("affinityStatus.connection"))}</h2>
+        <div class="affinity-status-row"><span>${escapeHtml(t("affinityStatus.address"))}</span><span>localhost:6767</span></div>
+        <div class="affinity-status-row"><span>${escapeHtml(t("affinityStatus.serverVersion"))}</span><span>${escapeHtml(serverVersion || "—")}</span></div>
+        <div class="affinity-status-row"><span>${escapeHtml(t("affinityStatus.latency"))}</span><span>${latencyMs} ms</span></div>
+        <div class="affinity-status-row"><span>${escapeHtml(t("affinityStatus.status"))}</span><span class="affinity-status-badge good">${escapeHtml(t("affinityStatus.connected"))}</span></div>
+      </div>
+      <section class="affinity-status-card">
+        <h2>${escapeHtml(t("affinityStatus.permissions"))}</h2>
+        ${permissionRow("affinityStatus.fileSystem", permissions.fileSystem)}
+        ${permissionRow("affinityStatus.desktop", desktopAllowed)}
+        ${permissionRow("affinityStatus.network", permissions.network)}
+        ${permissionRow("affinityStatus.ai", permissions.genAI)}
+        ${!desktopAllowed ? `<p class="affinity-status-help">${escapeHtml(t("affinityStatus.desktopHelp"))}</p>` : ""}
+      </section>
+      <section class="affinity-status-card">
+        <h2>${escapeHtml(t("affinityStatus.folders"))}</h2>
+        <p>${escapeHtml(t("affinityStatus.desktopPath", { path: desktopPath || "—" }))}</p>
+        ${roots.length ? `<ul class="affinity-status-roots">${roots.map((rootPath) => `<li>${escapeHtml(rootPath)}</li>`).join("")}</ul>` : `<p>${escapeHtml(t("affinityStatus.noFolders"))}</p>`}
+      </section>
+      <p class="affinity-status-note">${escapeHtml(t("affinityStatus.scopeNote"))}</p>
+    `;
+  };
+  button.onclick = check;
+  check();
 }
 
 // ---------- Useful links ----------

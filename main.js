@@ -901,6 +901,32 @@ app.whenReady().then(async () => {
   // --- LOCAL SCRIPTS & MCP ---
   // ==========================================
 
+  ipcMain.handle("get-affinity-health", async () => {
+    const started = Date.now();
+    try {
+      const result = await callTool(client, "execute_script", {
+        script: "const { Environment } = require('/environment.js'); const { Application } = require('/application.js'); console.log(JSON.stringify({ permissions: Environment.permissions, roots: Environment.fileSystemRoots, desktopPath: Application.userDesktopPath }));",
+      });
+      const output = getTextContent(result).trim();
+      const data = JSON.parse(output.split(/\r?\n/).at(-1));
+      if (!data || typeof data.permissions !== "object" || !Array.isArray(data.roots))
+        throw new Error("Affinity returned incomplete permission information.");
+      const desktop = path.resolve(String(data.desktopPath || ""));
+      const desktopAllowed = !!data.permissions.fileSystem && !!data.desktopPath && data.roots.some((root) => {
+        const relative = path.relative(path.resolve(String(root)), desktop);
+        return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+      });
+      return { success: true, data: {
+        ...data,
+        desktopAllowed,
+        latencyMs: Date.now() - started,
+        serverVersion: client.getServerVersion()?.version || null,
+      } };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
   ipcMain.handle("get-script-folders", async () => ({
     success: true,
     data: { primary: localScriptsDir, default: defaultScriptsDir, watched: watchedScriptsDirs },

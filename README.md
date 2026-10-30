@@ -10,7 +10,8 @@ The UI message catalogs are in `locales/` for English, Czech, Japanese, Simplifi
   * **Watched** — scripts from extra folders you add in App Settings. Install them into Affinity from this tab; changes to installed scripts are watched for sync. Automatic sync is skipped when another library script has the same name.
   * **Just in Affinity** — scripts that live in Affinity but aren't in your local library (blue dot), with **Download to My Scripts** and **Download to folder**.
 * **App Settings:** Open or change the main scripts folder, restore its default location, add or remove watched folders, and manage community repositories. When changing the main folder, choose whether to move existing scripts and how to handle each duplicate filename. Files left in the old location remain accessible through a watched folder.
-* **Bridge diagnostics ("More info"):** Live connection status, round-trip latency, and an event stream log for the local MCP bridge — tucked behind a **More info** button so it stays out of your way.
+* **Affinity Status:** Check the live MCP connection, permissions available to scripts run through MCP, and allowed file system folders. The page highlights whether Affinity allows access to your Desktop; saved scripts can have different individual permissions.
+* **Bridge diagnostics:** The Affinity Status page shows the live MCP connection, server version, round-trip latency, and a log of connection checks.
 * **Watch Mode:** Always-on file watcher. When you save a script that is already installed in Affinity, the app automatically re-pushes it — no manual step needed.
 * **Community Scripts:** Browse scripts from any GitHub-hosted registry. Image previews, a **Featured** carousel, filter by category and library status, sort, and mark favorites. The action button shows **Install**, **In library**, or **Update** when a newer version is available. Save-only mode downloads without installing.
 * **SDK documentation:** Browse Affinity's SDK topics, search their full text, and download a versioned Markdown export. Once a full SDK copy has been prepared by search or export, it remains available locally when Affinity's MCP bridge is offline.
@@ -53,7 +54,7 @@ The UI message catalogs are in `locales/` for English, Czech, Japanese, Simplifi
 
 **Sharing your script:** Click the **Share** (GitHub) action on any local or Affinity script, or **Submit Script** in the Community tab. The app copies a ready-to-submit contribution to your clipboard and opens a GitHub issue — paste it in and submit.
 
-**Bridge status:** In **My Scripts**, click **More info** for the Affinity MCP connection details, latency, and event log.
+**Bridge status:** Open **Affinity Status** in the sidebar for the Affinity MCP connection details, latency, permissions, and event log.
 
 **Reading the docs / searching the SDK:** Click **Documentation** in the sidebar to list SDK topics, then open one to load and read it as Markdown. Opened topics are cached while the Affinity version stays the same. Use the search bar to query SDK hints directly.
 

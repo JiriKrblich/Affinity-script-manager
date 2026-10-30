@@ -702,36 +702,6 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
    My Scripts — list view with state tags
    ============================================================ */
 
-/* Slim, borderless connection line (was a heavy card). */
-.local-statusline {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 14px;
-    font: 400 12px/1 var(--f-sans);
-    color: var(--text-dim);
-}
-.local-statusline .sl-sep {
-    color: var(--text-mute);
-}
-.local-statusline .sl-more {
-    margin-left: auto;
-    background: transparent;
-    border: none;
-    color: var(--text-dim);
-    font: 500 12px/1 var(--f-sans);
-    cursor: pointer;
-    padding: 4px 6px;
-    border-radius: var(--r-sm);
-    transition:
-        color 0.12s,
-        background 0.12s;
-}
-.local-statusline .sl-more:hover {
-    color: var(--text-strong);
-    background: var(--bg-hover);
-}
-
 /* ---------- Run without install modal ---------- */
 .modal.run-modal {
     max-width: 760px;
@@ -1047,65 +1017,6 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
     color: var(--text-faint);
     text-transform: uppercase;
     margin-left: 6px;
-}
-
-/* ============================================================
-   Affinity connection ("More info") modal — bridge diagnostics,
-   event log, and Affinity-only orphan scripts.
-   ============================================================ */
-
-.modal.bridge-modal {
-    max-width: 620px;
-    max-height: calc(100vh - 48px);
-}
-.bridge-modal .modal-body {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-}
-.bridge-info {
-    display: flex;
-    flex-direction: column;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--r-md);
-    overflow: hidden;
-}
-.bridge-info-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px 14px;
-    border-top: 1px solid var(--hair);
-    font: 400 13px/1 var(--f-sans);
-}
-.bridge-info-row:first-child {
-    border-top: none;
-}
-.bridge-info-row .k {
-    color: var(--text-dim);
-}
-.bridge-info-row .v {
-    color: var(--text-strong);
-    font-variant-numeric: tabular-nums;
-}
-.bm-status-cell {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    text-transform: capitalize;
-}
-.bridge-section-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
-}
-.bridge-empty {
-    grid-column: 1 / -1;
-    color: var(--text-faint);
-    font: 400 12px/1.4 var(--f-sans);
-    padding: 8px 0;
 }
 
 .event-log {
@@ -1982,6 +1893,27 @@ body.platform-darwin .community-sticky {
 .api-change-row code { display: block; overflow-wrap: anywhere; color: var(--text-strong); font-size: 12px; }
 .api-change-row code:last-child { color: var(--accent); }
 .api-scan-result { margin-top: 12px; }
+
+.affinity-status-screen { max-width: 900px; }
+.affinity-status-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
+.affinity-status-header .subhead { margin-bottom: 24px; }
+.affinity-status-header button { flex: none; margin-top: 6px; }
+.affinity-status-loading { color: var(--text-dim); padding: 16px 0; }
+.affinity-status-card { padding: 20px; margin-bottom: 16px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--bg-card); }
+.affinity-status-card h2 { margin: 0 0 12px; color: var(--text-strong); font: 600 17px/1.3 var(--f-sans); }
+.affinity-status-card p { margin: 10px 0 0; color: var(--text-dim); overflow-wrap: anywhere; }
+.affinity-status-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 9px 0; border-bottom: 1px solid var(--hair); }
+.affinity-status-row:last-child { border-bottom: 0; }
+.affinity-status-row strong { color: var(--text-strong); }
+.affinity-status-badge { flex: none; padding: 3px 9px; border-radius: var(--r-sm); font-size: 11px; font-weight: 600; }
+.affinity-status-badge.good { background: var(--accent-dim); color: var(--accent); }
+.affinity-status-badge.bad { background: var(--danger-bg); color: var(--danger-text); }
+.affinity-status-card .affinity-status-help { color: var(--warn); }
+.affinity-status-card .affinity-status-error { font-size: 11px; }
+.affinity-status-roots { margin: 10px 0 0; padding-left: 20px; overflow-wrap: anywhere; }
+.affinity-status-roots li { padding: 3px 0; }
+.affinity-status-note { color: var(--text-faint); font-size: 12px; line-height: 1.5; }
+@media (max-width: 620px) { .affinity-status-header { flex-wrap: wrap; } }
 
 .resource-sections { display: grid; min-width: 0; gap: 36px; }
 .resource-section { min-width: 0; }

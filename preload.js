@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // --- MCP Cloud ---
   listMcpScripts: () => ipcRenderer.invoke('list-mcp-scripts'),
+  getAffinityHealth: () => ipcRenderer.invoke('get-affinity-health'),
   executeScript: (code) => ipcRenderer.invoke('execute-script', code),
   runCommunityScript: (downloadUrl) => ipcRenderer.invoke('run-community-script', downloadUrl),
   renderActivePreview: () => ipcRenderer.invoke('render-active-preview'),
