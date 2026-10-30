@@ -1136,6 +1136,21 @@ async function renderLocal(root) {
     const nameLine = document.createElement("div");
     nameLine.className = "row-name";
     nameLine.innerHTML = `${escapeHtml(it.name)}<span class="row-ext">.js</span>`;
+    const revision = it.file.match(/-([a-f0-9]{7})(?:-\d+)?\.js$/i);
+    if (revision) {
+      const badge = document.createElement("span");
+      badge.className = "tag";
+      badge.textContent = `rev ${revision[1]}`;
+      badge.title = it.file;
+      nameLine.appendChild(badge);
+    }
+    if (/-backup-\d+(?:-\d+)?\.js$/i.test(it.file)) {
+      const badge = document.createElement("span");
+      badge.className = "tag";
+      badge.textContent = "Backup";
+      badge.title = it.file;
+      nameLine.appendChild(badge);
+    }
 
     const favKey = scriptStem(it.file);
     const isFav = state.favorites.has(favKey);
@@ -1881,7 +1896,19 @@ async function renderCommunity(root) {
                 ? escapeHtml(script.description)
                 : `<span class="community-detail-desc-empty">No description provided.</span>`
             }</div>
+            <div class="community-history">
+              <button class="gh-btn" id="m-history">Version history</button>
+            </div>
           </div>
+        </div>
+        <div class="community-history-view" id="m-history-view" hidden>
+          <div class="community-history-head">
+            <button class="gh-btn" id="m-history-back">← Back</button>
+            <h2>Version history</h2>
+            <p>${escapeHtml(script.name || "Community script")}</p>
+          </div>
+          <div class="community-history-note">Install adds a revision to My Scripts and Affinity. Downgrade replaces the local script after saving a backup; if it is installed in Affinity, remove it there before installing the older version.</div>
+          <div id="m-history-list" class="community-history-list"></div>
         </div>
         <div class="modal-foot community-detail-actions">
           <button class="gh-btn" id="m-favorite"></button>
@@ -1919,6 +1946,74 @@ async function renderCommunity(root) {
         );
       };
     }
+
+    const historyBtn = bd.querySelector("#m-history");
+    const historyList = bd.querySelector("#m-history-list");
+    const historyView = bd.querySelector("#m-history-view");
+    const detailView = bd.querySelector(".community-detail-scroll");
+    const detailActions = bd.querySelector(".community-detail-actions");
+    bd.querySelector("#m-history-back").onclick = () => {
+      historyView.hidden = true;
+      detailView.hidden = false;
+      detailActions.hidden = false;
+    };
+    historyBtn.onclick = async () => {
+      detailView.hidden = true;
+      detailActions.hidden = true;
+      historyView.hidden = false;
+      historyList.textContent = "Loading history…";
+      const result = await window.api.listScriptHistory(script);
+      if (!document.body.contains(bd) || historyView.hidden) return;
+      if (!result?.success) {
+        historyList.textContent = result?.error || "Could not load history.";
+        return;
+      }
+      const commits = result.data || [];
+      if (!commits.length) {
+        historyList.textContent = "No revisions found for this file.";
+        return;
+      }
+      const local = localByStem.get(scriptStem(script.name));
+      historyList.innerHTML = commits.map((commit) => `
+        <div class="community-history-row">
+          <div><strong>${commit.date && !Number.isNaN(Date.parse(commit.date)) ? escapeHtml(new Date(commit.date).toLocaleDateString()) : "Unknown date"}</strong>
+            ${commit.version ? `<span class="tag">v${escapeHtml(commit.version)}</span>` : ""}
+            <span class="community-history-sha">${escapeHtml(commit.sha.slice(0, 7))}</span>
+            <div class="community-history-message">${escapeHtml(commit.message)}</div>
+          </div>
+          <div class="community-history-actions">
+            <button class="gh-btn" data-sha="${commit.sha}" data-action="copy">Save copy</button>
+            <button class="accent-btn" data-sha="${commit.sha}" data-action="${local ? "downgrade" : "install"}">${local ? "Downgrade" : "Install"}</button>
+          </div>
+        </div>`).join("");
+      historyList.querySelectorAll("[data-sha]").forEach((button) => {
+        button.onclick = async () => {
+          const action = button.dataset.action;
+          if (action === "downgrade" && !confirm("Replace the local script with this revision? A backup will be saved in My Scripts. If the script is installed in Affinity, remove that copy there before installing the older revision.")) return;
+          button.disabled = true;
+          button.textContent = action === "install" ? "Installing…" : "Saving…";
+          const saved = await window.api.saveScriptRevision(script, button.dataset.sha, action, localByStem.get(scriptStem(script.name))?.file);
+          if (!saved?.success) {
+            button.disabled = false;
+            button.textContent = action === "copy" ? "Save copy" : action === "install" ? "Install" : "Downgrade";
+            alert(saved?.error || "Could not save revision.");
+            return;
+          }
+          button.textContent = action === "copy" ? "Copy saved" : action === "install" ? (saved.installed ? "Installed" : "Saved locally") : "Downgraded";
+          button.title = saved.filename;
+          if (action !== "copy") {
+            localByStem.set(scriptStem(script.name), { file: saved.filename, version: saved.version });
+            paint();
+            historyList.querySelectorAll('[data-action="install"]').forEach((installButton) => {
+              if (installButton === button) return;
+              installButton.dataset.action = "downgrade";
+              installButton.textContent = "Downgrade";
+            });
+          }
+          if (saved.warning) alert(saved.warning);
+        };
+      });
+    };
 
     const favoriteBtn = bd.querySelector("#m-favorite");
     const paintFavoriteBtn = () => {

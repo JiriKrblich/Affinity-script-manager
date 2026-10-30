@@ -18,6 +18,7 @@ let transport;
 let localScriptsDir;
 let configPath;
 let win;
+const suppressWatchUntil = new Map();
 ipcMain.on("app-version-sync", (e) => {
   e.returnValue = app.getVersion();
 });
@@ -73,6 +74,43 @@ function fetchFresh(url, options = {}) {
       ...(options.headers || {}),
     },
   });
+}
+
+function githubScriptLocation(script) {
+  if (!script || typeof script.id !== "string" || !script.id.trim())
+    throw new Error("This script has no registry ID.");
+  const url = new URL(script.download_url);
+  if (url.protocol !== "https:" || url.hostname !== "raw.githubusercontent.com")
+    throw new Error("Version history is available for GitHub-hosted scripts only.");
+  const parts = url.pathname.split("/").filter(Boolean);
+  if (parts.length < 4 || !url.pathname.endsWith(".js"))
+    throw new Error("Invalid GitHub script URL.");
+  const [owner, repo, ref, ...rest] = parts;
+  const branchParts = ref === "refs" && rest[0] === "heads" ? rest.slice(1) : rest;
+  const fileParts = ref === "refs" && rest[0] === "heads" ? branchParts.slice(1) : rest;
+  const branch = ref === "refs" && rest[0] === "heads" ? branchParts[0] : ref;
+  if (!owner || !repo || !branch || !fileParts.length ||
+      [owner, repo, branch, ...fileParts].some((p) => p === "." || p === ".."))
+    throw new Error("Invalid GitHub script URL.");
+  return { owner, repo, branch, filePath: fileParts.join("/") };
+}
+
+async function githubScriptCommits(script) {
+  const location = githubScriptLocation(script);
+  const { owner, repo, branch, filePath } = location;
+  const api = new URL(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits`);
+  api.searchParams.set("sha", branch);
+  api.searchParams.set("path", filePath);
+  api.searchParams.set("per_page", "10");
+  const response = await fetch(api, { headers: { Accept: "application/vnd.github+json" } });
+  if (!response.ok) throw new Error(response.status === 403 ? "GitHub request limit reached. Try again later." : `GitHub history unavailable (HTTP ${response.status}).`);
+  const commits = await response.json();
+  if (!Array.isArray(commits)) throw new Error("Invalid GitHub history response.");
+  return { location, commits: commits.filter((c) => /^[a-f0-9]{40}$/.test(c.sha)).map((c) => ({
+    sha: c.sha,
+    date: c.commit?.committer?.date || c.commit?.author?.date || "",
+    message: (c.commit?.message || "").split("\n")[0],
+  })) };
 }
 
 // Build a GitHub "new issue" URL whose body mirrors the community repo's
@@ -377,6 +415,10 @@ async function startWatcher() {
       // newly-saved files stay local until the user explicitly clicks the
       // install dot in My Scripts.
       try {
+        if (Date.now() < (suppressWatchUntil.get(filename) || 0)) {
+          if (win && !win.isDestroyed()) win.webContents.send("local-scripts-changed");
+          return;
+        }
         const listResult = await callTool(client, "list_library_scripts", {});
         const titles = parseCsvTextContent(listResult).map((t) =>
           t.toLowerCase(),
@@ -910,6 +952,98 @@ app.whenReady().then(async () => {
         allScripts = allScripts.concat(scriptsWithSource);
       }
       return { success: true, data: allScripts, errors: repoErrors };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("list-script-history", async (event, script) => {
+    try {
+      const { location, commits } = await githubScriptCommits(script);
+      const { owner, repo, filePath } = location;
+      const data = await Promise.all(commits.map(async (commit) => {
+        const rawUrl = `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${commit.sha}/${filePath.split("/").map(encodeURIComponent).join("/")}`;
+        try {
+          const response = await fetch(rawUrl);
+          if (!response.ok) return commit;
+          const code = await response.text();
+          return { ...commit, version: parseScriptMetadata(code).version };
+        } catch {
+          return commit;
+        }
+      }));
+      return { success: true, data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("save-script-revision", async (event, script, sha, action = "copy", targetFilename) => {
+    try {
+      if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error("Invalid revision.");
+      if (!["copy", "install", "downgrade"].includes(action)) throw new Error("Invalid revision action.");
+      const { location, commits } = await githubScriptCommits(script);
+      if (!commits.some((commit) => commit.sha === sha))
+        throw new Error("Revision is not in this script's recent history.");
+      const { owner, repo, filePath } = location;
+      const rawUrl = `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${sha}/${filePath.split("/").map(encodeURIComponent).join("/")}`;
+      const response = await fetch(rawUrl);
+      if (!response.ok) throw new Error(`Cannot download revision (HTTP ${response.status}).`);
+      const code = await response.text();
+      const meta = parseScriptMetadata(code, script.name || script.id);
+      const copyCode = upsertMetadataHeader(code, { name: `${meta.name} (rev ${sha.slice(0, 7)})` });
+      const base = localScriptFilenameFromInput(script.name || script.id).replace(/\.js$/, "");
+      if (action !== "copy") {
+        const filename = action === "downgrade" ? assertLocalScriptFilename(targetFilename) : `${base}.js`;
+        const fullPath = path.join(localScriptsDir, filename);
+        const historicalCode = upsertMetadataHeader(code, {
+          name: meta.name || script.name,
+          description: meta.description || script.description,
+          author: meta.author || script.author,
+        });
+        if (action === "install") {
+          await fs.writeFile(fullPath, historicalCode, { encoding: "utf8", flag: "wx" });
+          try {
+            await callTool(client, "save_script_to_library", {
+              title: meta.name || script.name,
+              description: meta.description || script.description || "",
+              code: historicalCode,
+            });
+            return { success: true, filename, version: meta.version, installed: true };
+          } catch (error) {
+            return { success: true, filename, version: meta.version, installed: false,
+              warning: `Saved in My Scripts, but Affinity installation failed: ${error.message}` };
+          }
+        }
+        const currentCode = await fs.readFile(fullPath, "utf8");
+        let backup;
+        let backedUp = false;
+        for (let attempt = 0; attempt < 100; attempt++) {
+          backup = `${base}-backup-${Date.now()}${attempt ? `-${attempt}` : ""}.js`;
+          try {
+            await fs.writeFile(path.join(localScriptsDir, backup), currentCode, { encoding: "utf8", flag: "wx" });
+            backedUp = true;
+            break;
+          } catch (error) {
+            if (error.code !== "EEXIST") throw error;
+          }
+        }
+        if (!backedUp) throw new Error("Could not back up the current script.");
+        suppressWatchUntil.set(filename, Date.now() + 3000);
+        await fs.writeFile(fullPath, historicalCode, "utf8");
+        return { success: true, filename, backup, version: meta.version };
+      }
+      let filename;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        filename = `${base}-${sha.slice(0, 7)}${attempt ? `-${attempt + 1}` : ""}.js`;
+        try {
+          await fs.writeFile(path.join(localScriptsDir, filename), copyCode, { encoding: "utf8", flag: "wx" });
+          return { success: true, filename, version: meta.version };
+        } catch (error) {
+          if (error.code !== "EEXIST") throw error;
+        }
+      }
+      throw new Error("Could not create a unique local filename.");
     } catch (error) {
       return { success: false, error: error.message };
     }
