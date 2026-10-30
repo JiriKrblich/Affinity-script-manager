@@ -3,6 +3,7 @@ const state = {
   nav: "local",
   localTab: "local", // 'local' | 'affinity' — My Scripts sub-tabs
   settingsFocus: null,
+  settingsCategory: "folders",
   localQuery: "",
   communityQuery: "",
   communityFilter: "all",
@@ -816,8 +817,38 @@ async function renderAppSettings(root) {
   screen.innerHTML = `
     <div class="eyebrow">Preferences</div>
     <h1>App Settings</h1>
-    <p class="subhead">Manage script folders and community repositories.</p>
-    <section class="settings-card">
+    <p class="subhead">Manage script folders, editor preferences, and community repositories.</p>
+    <nav class="settings-categories" aria-label="Settings categories">
+      <button type="button" data-settings-category="folders">Script folders</button>
+      <button type="button" data-settings-category="editor">Code editor</button>
+      <button type="button" data-settings-category="repositories">Community repositories</button>
+    </nav>
+    <section class="settings-card" data-settings-panel="editor">
+      <h2>Code editor</h2>
+      <p>Choose how Tab indents code. Changes apply the next time you open a script and do not reformat existing code.</p>
+      <div class="settings-editor-controls">
+        <label>Indent with
+          <select id="settings-indent-style" disabled>
+            <option value="spaces">Spaces</option>
+            <option value="tabs">Tabs</option>
+          </select>
+        </label>
+        <label>Tab width
+          <select id="settings-tab-size" disabled>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
+          </select>
+        </label>
+      </div>
+      <p class="settings-error" id="settings-editor-error" hidden></p>
+    </section>
+    <section class="settings-card" data-settings-panel="folders">
       <h2>Main scripts folder</h2>
       <p>New and downloaded scripts are saved here. Changing this folder does not move scripts unless you choose to move them.</p>
       <div class="settings-path" id="settings-main-path">Loading…</div>
@@ -827,13 +858,13 @@ async function renderAppSettings(root) {
         <button class="gh-btn" id="settings-reset-main">Use default</button>
       </div>
     </section>
-    <section class="settings-card">
+    <section class="settings-card" data-settings-panel="folders">
       <h2>Watched folders</h2>
       <p>Scripts from these folders appear in My Scripts → Watched. Edits to scripts already installed in Affinity are synced when the files change. Use unique script names across folders so they do not overwrite each other in Affinity.</p>
       <div id="settings-watched-list"></div>
       <button class="gh-btn" id="settings-add-watched">Add watched folder</button>
     </section>
-    <section class="settings-card" id="settings-repositories">
+    <section class="settings-card" id="settings-repositories" data-settings-panel="repositories">
       <h2>Community repositories</h2>
       <p>Add a GitHub repository URL to discover its scripts in Community.</p>
       <div class="add-repo">
@@ -843,13 +874,60 @@ async function renderAppSettings(root) {
       <div id="settings-repo-list" class="settings-repo-list"></div>
     </section>`;
   root.appendChild(screen);
-  if (state.settingsFocus === "repositories") {
-    state.settingsFocus = null;
-    requestAnimationFrame(() => {
-      if (screen.isConnected) screen.querySelector("#settings-repositories").scrollIntoView({ block: "start" });
+  const categoryButtons = [...screen.querySelectorAll("[data-settings-category]")];
+  const categoryPanels = [...screen.querySelectorAll("[data-settings-panel]")];
+  const showCategory = (category) => {
+    state.settingsCategory = category;
+    categoryButtons.forEach((button) => {
+      const selected = button.dataset.settingsCategory === category;
+      button.classList.toggle("active", selected);
+      button.setAttribute("aria-current", selected ? "page" : "false");
     });
+    categoryPanels.forEach((panel) => {
+      panel.hidden = panel.dataset.settingsPanel !== category;
+    });
+  };
+  categoryButtons.forEach((button) => {
+    button.onclick = () => showCategory(button.dataset.settingsCategory);
+  });
+  showCategory(state.settingsFocus || state.settingsCategory);
+  state.settingsFocus = null;
+  const indentStyleSelect = screen.querySelector("#settings-indent-style");
+  const tabSizeSelect = screen.querySelector("#settings-tab-size");
+  const editorSettingsError = screen.querySelector("#settings-editor-error");
+  let savedEditorSettings;
+  const editorSettingsResult = await window.api.getEditorSettings();
+  if (editorSettingsResult?.success) {
+    savedEditorSettings = editorSettingsResult.data;
+    indentStyleSelect.value = savedEditorSettings.indentStyle;
+    tabSizeSelect.value = String(savedEditorSettings.tabSize);
+    indentStyleSelect.disabled = false;
+    tabSizeSelect.disabled = false;
+  } else {
+    editorSettingsError.textContent = editorSettingsResult?.error || "Could not load editor settings.";
+    editorSettingsError.hidden = false;
   }
-
+  const saveEditorSettings = async () => {
+    indentStyleSelect.disabled = true;
+    tabSizeSelect.disabled = true;
+    const result = await window.api.setEditorSettings({
+      indentStyle: indentStyleSelect.value,
+      tabSize: Number(tabSizeSelect.value),
+    });
+    if (result?.success) {
+      savedEditorSettings = result.data;
+      editorSettingsError.hidden = true;
+    } else {
+      indentStyleSelect.value = savedEditorSettings.indentStyle;
+      tabSizeSelect.value = String(savedEditorSettings.tabSize);
+      editorSettingsError.textContent = result?.error || "Could not save editor settings.";
+      editorSettingsError.hidden = false;
+    }
+    indentStyleSelect.disabled = false;
+    tabSizeSelect.disabled = false;
+  };
+  indentStyleSelect.onchange = saveEditorSettings;
+  tabSizeSelect.onchange = saveEditorSettings;
   const repoInput = screen.querySelector("#settings-repo-input");
   const repoAdd = screen.querySelector("#settings-add-repo");
   const repoList = screen.querySelector("#settings-repo-list");
@@ -2956,11 +3034,15 @@ async function renderEditor(root) {
     initialContent = res.data.code || "";
   }
 
+  const editorSettingsResult = await window.api.getEditorSettings();
+  const editorSettings = editorSettingsResult?.success
+    ? editorSettingsResult.data
+    : { indentStyle: "spaces", tabSize: 2 };
   activeEditor = ace.edit(host, {
     mode: "ace/mode/javascript",
     theme: "ace/theme/tomorrow_night",
-    tabSize: 2,
-    useSoftTabs: true,
+    tabSize: editorSettings.tabSize,
+    useSoftTabs: editorSettings.indentStyle === "spaces",
     fontSize: "13px",
     showPrintMargin: false,
     fontFamily: 'SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',

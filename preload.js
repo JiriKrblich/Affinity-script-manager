@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld('api', {
   removeRepo: (url) => ipcRenderer.invoke('remove-repo', url),
   getSidebarCollapsed: () => ipcRenderer.invoke('get-sidebar-collapsed'),
   setSidebarCollapsed: (collapsed) => ipcRenderer.invoke('set-sidebar-collapsed', collapsed),
+  getEditorSettings: () => ipcRenderer.invoke('get-editor-settings'),
+  setEditorSettings: (settings) => ipcRenderer.invoke('set-editor-settings', settings),
   onReposChanged: (callback) => ipcRenderer.on('repos-changed', callback), // NOVÉ
 
   // --- Systémové (Aktualizace) ---

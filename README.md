@@ -42,6 +42,8 @@
 
 **Editing a script:** Click the pencil icon in the Actions column, or open the **Code Editor** and pick a script. Save with `Cmd+S` / `Ctrl+S`. If the script is already installed in Affinity, Watch Mode re-pushes the update automatically. If you edit the file externally, click **Reload from disk** before **Run** to use its latest contents. Reload asks before discarding unsaved editor changes.
 
+**Editor indentation:** In **App Settings → Code editor**, choose tabs or spaces and a tab width from 1 to 8. The choice applies when you next open a script; existing code is not reformatted. App Settings also has separate **Script folders** and **Community repositories** categories.
+
 **Writing a new script:** Go to **Code Editor** and click **New Script**. A blank buffer opens with a pre-filled metadata header. Give it a name, write your code, then save.
 
 **Community scripts:** Open the **Community** tab. Browse by category, use the library status filter (**All**, **In library**, **Not in library**, **Updates available**), or search (`⌘K`). Click **Install** to save to your library and push to Affinity at once, or the save icon to download only. Click a card to open its details, where you can **Run without install** to preview what a script does before adding it.

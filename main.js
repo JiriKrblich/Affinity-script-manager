@@ -391,6 +391,14 @@ async function getConfig() {
     config.sidebarCollapsed = false;
     needsSave = true;
   }
+  if (!["spaces", "tabs"].includes(config.editorIndentStyle)) {
+    config.editorIndentStyle = "spaces";
+    needsSave = true;
+  }
+  if (!Number.isInteger(config.editorTabSize) || config.editorTabSize < 1 || config.editorTabSize > 8) {
+    config.editorTabSize = 2;
+    needsSave = true;
+  }
   if (config.scriptsDirectory !== null &&
       (typeof config.scriptsDirectory !== "string" || !path.isAbsolute(config.scriptsDirectory))) {
     config.scriptsDirectory = null;
@@ -1391,6 +1399,29 @@ app.whenReady().then(async () => {
       config.sidebarCollapsed = Boolean(collapsed);
       await saveConfig(config);
       return { success: true, data: config.sidebarCollapsed };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("get-editor-settings", async () => {
+    try {
+      const config = await getConfig();
+      return { success: true, data: { indentStyle: config.editorIndentStyle, tabSize: config.editorTabSize } };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("set-editor-settings", async (event, settings) => {
+    try {
+      if (!["spaces", "tabs"].includes(settings?.indentStyle) || !Number.isInteger(settings?.tabSize) || settings.tabSize < 1 || settings.tabSize > 8)
+        throw new Error("Invalid editor indentation settings.");
+      const config = await getConfig();
+      config.editorIndentStyle = settings.indentStyle;
+      config.editorTabSize = settings.tabSize;
+      await saveConfig(config);
+      return { success: true, data: { indentStyle: config.editorIndentStyle, tabSize: config.editorTabSize } };
     } catch (error) {
       return { success: false, error: error.message };
     }
