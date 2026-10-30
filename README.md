@@ -40,7 +40,7 @@
 
 **Downloading from Affinity:** Open **My Scripts → Just in Affinity** to see scripts that live in Affinity but not in your library, and click the download icon to pull one into **My Scripts** (or save it to a folder).
 
-**Editing a script:** Click the pencil icon in the Actions column, or open the **Code Editor** and pick a script. Save with `Cmd+S` / `Ctrl+S`. If the script is already installed in Affinity, Watch Mode re-pushes the update automatically. Hit **Run** to try the current buffer in Affinity without installing.
+**Editing a script:** Click the pencil icon in the Actions column, or open the **Code Editor** and pick a script. Save with `Cmd+S` / `Ctrl+S`. If the script is already installed in Affinity, Watch Mode re-pushes the update automatically. If you edit the file externally, click **Reload from disk** before **Run** to use its latest contents. Reload asks before discarding unsaved editor changes.
 
 **Writing a new script:** Go to **Code Editor** and click **New Script**. A blank buffer opens with a pre-filled metadata header. Give it a name, write your code, then save.
 

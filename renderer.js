@@ -2912,6 +2912,7 @@ async function renderEditor(root) {
     <div class="editor-header">
       <button class="gh-btn compact" id="ed-back">${backLabel}</button>
       <div class="editor-filename${isNew ? " new" : ""}">${filenameHtml}</div>
+      ${isNew ? "" : '<button class="gh-btn compact" id="ed-reload" title="Replace the editor buffer with the latest file from disk">Reload from disk</button>'}
       <button class="gh-btn compact" id="ed-run" title="Run this buffer in Affinity without installing"><span id="ed-run-ico"></span> Run</button>
       <button class="accent-btn compact" id="ed-save" disabled>Save</button>
     </div>
@@ -2921,7 +2922,7 @@ async function renderEditor(root) {
 
   const backBtn = screen.querySelector("#ed-back");
   const saveBtn = screen.querySelector("#ed-save");
-  const dirtyEl = screen.querySelector("#ed-dirty");
+  let dirtyEl = screen.querySelector("#ed-dirty");
   const host = screen.querySelector("#editor-host");
   const nameInput = screen.querySelector("#ed-filename"); // null when not isNew
   backBtn.onclick = () => navigate(origin);
@@ -2983,6 +2984,36 @@ async function renderEditor(root) {
     if (!state.editorDirty) markDirty(true);
   });
 
+  const attachReload = (reloadBtn) => {
+    reloadBtn.onclick = async () => {
+      if (state.editorDirty && !confirm("Discard unsaved changes and reload this script from disk?")) return;
+      const bufferBeforeRead = activeEditor.getValue();
+      reloadBtn.disabled = true;
+      reloadBtn.textContent = "Reloading…";
+      try {
+        const result = await window.api.readLocalScript(state.editorFile);
+        if (!screen.isConnected || !activeEditor) return;
+        if (!result?.success) {
+          alert("Reload failed: " + (result?.error || "Could not read file"));
+          return;
+        }
+        if (activeEditor.getValue() !== bufferBeforeRead &&
+            !confirm("The editor changed while reloading. Discard those changes and use the file from disk?")) return;
+        activeEditor.setValue(result.data.code || "", -1);
+        markDirty(false);
+      } catch (error) {
+        if (screen.isConnected) alert("Reload failed: " + error.message);
+      } finally {
+        if (screen.isConnected) {
+          reloadBtn.disabled = false;
+          reloadBtn.textContent = "Reload from disk";
+        }
+      }
+    };
+  };
+  const reloadBtn = screen.querySelector("#ed-reload");
+  if (reloadBtn) attachReload(reloadBtn);
+
   const save = async () => {
     if (!activeEditor) return;
     const code = activeEditor.getValue();
@@ -3023,6 +3054,14 @@ async function renderEditor(root) {
       state.editorFile = targetFilename;
       const fnameEl = screen.querySelector(".editor-filename");
       fnameEl.innerHTML = `<span class="ed-dirty" id="ed-dirty"></span>${escapeHtml(targetFilename)}`;
+      dirtyEl = fnameEl.querySelector("#ed-dirty");
+      const newReloadBtn = document.createElement("button");
+      newReloadBtn.className = "gh-btn compact";
+      newReloadBtn.id = "ed-reload";
+      newReloadBtn.title = "Replace the editor buffer with the latest file from disk";
+      newReloadBtn.textContent = "Reload from disk";
+      fnameEl.after(newReloadBtn);
+      attachReload(newReloadBtn);
     }
 
     markDirty(false);
