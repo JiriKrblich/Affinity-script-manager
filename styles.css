@@ -2185,7 +2185,8 @@ body.platform-darwin .community-sticky {
     gap: 10px;
 }
 
-/* Settings modal: repo list + add row */
+/* Community repository controls in App Settings */
+.settings-repo-list { margin-top: 18px; }
 .add-repo {
     display: flex;
     gap: 8px;
@@ -2219,6 +2220,8 @@ body.platform-darwin .community-sticky {
 .repo-row .name {
     font: 500 13px/1 var(--f-sans);
     color: var(--text-strong);
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 .repo-row .kind {
     font: 600 10px/1 var(--f-sans);

@@ -2,6 +2,7 @@ const Ico = window.Icons.createIcon;
 const state = {
   nav: "local",
   localTab: "local", // 'local' | 'affinity' — My Scripts sub-tabs
+  settingsFocus: null,
   localQuery: "",
   communityQuery: "",
   communityFilter: "all",
@@ -805,14 +806,17 @@ function openRunModal(opts = {}) {
   run();
 }
 
-// ---------- My Scripts screen ----------
+const DEFAULT_COMMUNITY_REPO =
+  "https://raw.githubusercontent.com/JiriKrblich/Affinity-Community-Scripts/refs/heads/main/registry.json";
+
+// ---------- App Settings ----------
 async function renderAppSettings(root) {
   const screen = document.createElement("div");
   screen.className = "screen app-settings-screen";
   screen.innerHTML = `
     <div class="eyebrow">Preferences</div>
     <h1>App Settings</h1>
-    <p class="subhead">Choose where scripts are stored and which other folders appear in your library.</p>
+    <p class="subhead">Manage script folders and community repositories.</p>
     <section class="settings-card">
       <h2>Main scripts folder</h2>
       <p>New and downloaded scripts are saved here. Changing this folder does not move scripts unless you choose to move them.</p>
@@ -828,8 +832,86 @@ async function renderAppSettings(root) {
       <p>Scripts from these folders appear in My Scripts → Watched. Edits to scripts already installed in Affinity are synced when the files change. Use unique script names across folders so they do not overwrite each other in Affinity.</p>
       <div id="settings-watched-list"></div>
       <button class="gh-btn" id="settings-add-watched">Add watched folder</button>
+    </section>
+    <section class="settings-card" id="settings-repositories">
+      <h2>Community repositories</h2>
+      <p>Add a GitHub repository URL to discover its scripts in Community.</p>
+      <div class="add-repo">
+        <input id="settings-repo-input" type="text" placeholder="https://github.com/user/repository" aria-label="GitHub repository URL">
+        <button class="accent-btn compact" id="settings-add-repo">Add</button>
+      </div>
+      <div id="settings-repo-list" class="settings-repo-list"></div>
     </section>`;
   root.appendChild(screen);
+  if (state.settingsFocus === "repositories") {
+    state.settingsFocus = null;
+    requestAnimationFrame(() => {
+      if (screen.isConnected) screen.querySelector("#settings-repositories").scrollIntoView({ block: "start" });
+    });
+  }
+
+  const repoInput = screen.querySelector("#settings-repo-input");
+  const repoAdd = screen.querySelector("#settings-add-repo");
+  const repoList = screen.querySelector("#settings-repo-list");
+  const displayRepo = (url) => {
+    const match = url.match(/raw\.githubusercontent\.com\/([^/]+\/[^/]+)/);
+    return match ? match[1] : url;
+  };
+  async function refreshRepos() {
+    const result = await window.api.getRepos();
+    if (!screen.isConnected) return;
+    repoList.replaceChildren();
+    if (!result?.success) {
+      repoList.textContent = result?.error || "Could not load repositories.";
+      return;
+    }
+    for (const url of result.data) {
+      const row = document.createElement("div");
+      row.className = "repo-row";
+      const name = document.createElement("div");
+      name.className = "name";
+      name.textContent = displayRepo(url);
+      row.appendChild(name);
+      if (url === DEFAULT_COMMUNITY_REPO) {
+        const kind = document.createElement("span");
+        kind.className = "kind";
+        kind.textContent = "Default";
+        row.appendChild(kind);
+      } else {
+        const remove = document.createElement("button");
+        remove.className = "gh-btn compact danger";
+        remove.textContent = "Remove";
+        remove.onclick = async () => {
+          if (!confirm(`Remove ${displayRepo(url)}?`)) return;
+          remove.disabled = true;
+          const result = await window.api.removeRepo(url);
+          if (!result?.success) {
+            remove.disabled = false;
+            alert(result?.error || "Could not remove repository.");
+            return;
+          }
+          refreshRepos();
+        };
+        row.appendChild(remove);
+      }
+      repoList.appendChild(row);
+    }
+  }
+  async function addRepo() {
+    const url = repoInput.value.trim();
+    if (!url) return;
+    repoAdd.disabled = true;
+    repoAdd.textContent = "Adding…";
+    const result = await window.api.addRepo(url);
+    repoAdd.disabled = false;
+    repoAdd.textContent = "Add";
+    if (!result?.success) return alert(result?.error || "Could not add repository.");
+    repoInput.value = "";
+    refreshRepos();
+  }
+  repoAdd.onclick = addRepo;
+  repoInput.onkeydown = (event) => { if (event.key === "Enter") addRepo(); };
+  refreshRepos();
 
   async function refresh() {
     const result = await window.api.getScriptFolders();
@@ -948,6 +1030,8 @@ function openFolderChangeModal(plan, onDone) {
     if (result.data.leftBehind.length) alert(`${result.data.leftBehind.length} script(s) remain in the old folder, which is now watched.`);
   };
 }
+
+// ---------- My Scripts screen ----------
 
 async function renderLocal(root) {
   const screen = document.createElement("div");
@@ -1669,7 +1753,7 @@ async function renderCommunity(root) {
         </div>
         <div class="actions">
           <button class="gh-btn compact" id="btn-community-source"><span id="ico-src"></span> Source</button>
-          <button class="gh-btn compact" id="btn-community-settings"><span id="ico-gear"></span> Settings</button>
+          <button class="gh-btn compact" id="btn-community-settings"><span id="ico-gear"></span> Manage repositories</button>
           <button class="accent-btn compact" id="btn-community-submit"><span id="ico-plus"></span> Submit Script</button>
         </div>
       </div>
@@ -1725,8 +1809,10 @@ async function renderCommunity(root) {
     window.api.openUrl(
       "https://github.com/JiriKrblich/Affinity-Community-Scripts",
     );
-  screen.querySelector("#btn-community-settings").onclick = () =>
-    openSettingsModal();
+  screen.querySelector("#btn-community-settings").onclick = () => {
+    state.settingsFocus = "repositories";
+    navigate("app-settings");
+  };
   screen.querySelector("#btn-community-submit").onclick = () =>
     openShareModal({});
 
@@ -2752,97 +2838,6 @@ function openRenameLocalModal(script) {
   input.focus();
   input.select();
   updatePreview();
-}
-
-// ---------- Settings modal (internal — replaces the separate window) ----------
-const DEFAULT_COMMUNITY_REPO =
-  "https://raw.githubusercontent.com/JiriKrblich/Affinity-Community-Scripts/refs/heads/main/registry.json";
-
-function openSettingsModal() {
-  const bd = document.createElement("div");
-  bd.className = "modal-backdrop";
-  bd.innerHTML = `
-    <div class="modal" style="max-width:560px">
-      <div class="modal-head">
-        <h3>Community Repositories</h3>
-        <button class="icon-btn" id="m-close"></button>
-      </div>
-      <div class="modal-body" style="gap:18px;">
-        <p>Paste a GitHub URL (<span style="color:var(--text-strong); font-weight:600;">https://github.com/user/repo</span>) to discover more scripts.</p>
-        <div class="add-repo">
-          <input id="m-repo" type="text" placeholder="https://github.com/user/repository">
-          <button class="accent-btn compact" id="m-add">Add</button>
-        </div>
-        <div>
-          <div class="eyebrow" style="margin-bottom:10px;">Active repositories</div>
-          <div id="m-repo-list"></div>
-        </div>
-      </div>
-    </div>`;
-  bd.querySelector("#m-close").appendChild(Ico("close", { size: 13 }));
-  document.body.appendChild(bd);
-
-  const close = () => bd.remove();
-  bd.querySelector("#m-close").onclick = close;
-  bd.addEventListener("click", (e) => {
-    if (e.target === bd) close();
-  });
-
-  const getDisplayName = (url) => {
-    const m = url.match(/raw\.githubusercontent\.com\/([^\/]+\/[^\/]+)/);
-    return m ? m[1] : url;
-  };
-
-  const list = bd.querySelector("#m-repo-list");
-  const repoInput = bd.querySelector("#m-repo");
-  const addBtn = bd.querySelector("#m-add");
-
-  const load = async () => {
-    const res = await window.api.getRepos();
-    list.innerHTML = "";
-    if (!res.success) return;
-    res.data.forEach((url) => {
-      const row = document.createElement("div");
-      row.className = "repo-row";
-      const isDefault = url === DEFAULT_COMMUNITY_REPO;
-      const displayName = getDisplayName(url);
-      row.innerHTML =
-        `<div class="name">${escapeHtml(displayName)}</div>` +
-        (isDefault
-          ? `<span class="kind">Default</span>`
-          : `<button class="gh-btn compact danger">Remove</button>`);
-      if (!isDefault) {
-        row.querySelector("button").onclick = async () => {
-          if (!confirm(`Remove ${displayName}?`)) return;
-          await window.api.removeRepo(url);
-          load();
-        };
-      }
-      list.appendChild(row);
-    });
-  };
-
-  const submit = async () => {
-    const url = repoInput.value.trim();
-    if (!url) return;
-    addBtn.innerHTML = '<span class="loading">Adding</span>';
-    addBtn.disabled = true;
-    const r = await window.api.addRepo(url);
-    addBtn.textContent = "Add";
-    addBtn.disabled = false;
-    if (!r.success) {
-      alert(r.error);
-      return;
-    }
-    repoInput.value = "";
-    load();
-  };
-  addBtn.onclick = submit;
-  repoInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") submit();
-  });
-
-  load();
 }
 
 // ---------- Nav count helper ----------
