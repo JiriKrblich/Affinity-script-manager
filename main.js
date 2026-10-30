@@ -147,18 +147,25 @@ async function apiMonitorStatus() {
 // reopened. Bust the edge cache with a unique query param + no-cache headers so we
 // always pull the latest. Callers keep the clean URL for anything else (asset
 // resolution, _source), passing it here only at the fetch call site.
-function fetchFresh(url, options = {}) {
-  const sep = url.includes("?") ? "&" : "?";
-  const bustedUrl = `${url}${sep}_cb=${Date.now()}`;
-  return fetch(bustedUrl, {
-    cache: "no-store",
-    ...options,
-    headers: {
-      "Cache-Control": "no-cache",
-      Pragma: "no-cache",
-      ...(options.headers || {}),
-    },
-  });
+async function fetchFresh(url, options = {}) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const sep = url.includes("?") ? "&" : "?";
+    const bustedUrl = `${url}${sep}_cb=${Date.now()}-${attempt}`;
+    try {
+      return await fetch(bustedUrl, {
+        cache: "no-store",
+        ...options,
+        signal: options.signal || AbortSignal.timeout(20000),
+        headers: {
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache",
+          ...(options.headers || {}),
+        },
+      });
+    } catch (error) {
+      if (attempt || options.signal?.aborted) throw error;
+    }
+  }
 }
 
 function githubScriptLocation(script) {
@@ -359,15 +366,18 @@ function upsertMetadataHeader(code, metadata) {
 
 let mcpConnected = false;
 let mcpConnectPromise = null;
+let mcpLastActivity = 0;
+const MCP_IDLE_RECONNECT_MS = 5 * 60 * 1000;
 
 // Establish (or re-establish) the MCP session. Safe to call multiple times — concurrent callers
 // share the same in-flight promise. Throws if the bridge is unreachable so callers can surface
 // a real error instead of falling through with a stale client.
 async function ensureMcpConnected() {
-  if (mcpConnected && client && transport) return;
   if (mcpConnectPromise) return mcpConnectPromise;
+  if (mcpConnected && client && transport && Date.now() - mcpLastActivity < MCP_IDLE_RECONNECT_MS) return;
   mcpConnectPromise = (async () => {
     try {
+      mcpConnected = false;
       if (transport) {
         try {
           await transport.close();
@@ -375,6 +385,9 @@ async function ensureMcpConnected() {
       }
       client = new Client({ name: "script-mgr-ui", version: "1.0.0" });
       transport = new SSEClientTransport(new URL(SERVER_URL));
+      const connectedClient = client;
+      client.onclose = () => { if (client === connectedClient) mcpConnected = false; };
+      client.onerror = () => { if (client === connectedClient) mcpConnected = false; };
       await client.connect(transport);
       // Affinity's MCP requires reading the preamble doc once per session before other
       // SDK-doc tools will return real data — otherwise list_sdk_documentation etc. respond
@@ -394,6 +407,7 @@ async function ensureMcpConnected() {
         console.warn("[MCP] preamble prime failed:", primeErr.message);
       }
       mcpConnected = true;
+      mcpLastActivity = Date.now();
     } catch (err) {
       mcpConnected = false;
       throw err;
@@ -406,27 +420,38 @@ async function ensureMcpConnected() {
 
 function isRecoverableMcpSessionError(error) {
   const msg = error && error.message ? error.message : String(error);
-  return /session not initialized|session not found|not connected|disconnected|closed|http 404/i.test(
+  return /session not initialized|session not found|not connected|disconnected|closed|http 404|fetch failed|econnreset|econnrefused|econnaborted|epipe|network error|timed out|timeout/i.test(
     msg,
   );
 }
 
+function canRetryMcpTool(name, error) {
+  if (!["save_script_to_library", "execute_script", "add_sdk_hint", "report_sdk_issue"].includes(name)) return true;
+  // Repeating a write or script execution after an uncertain transport failure can duplicate effects.
+  return /session not initialized|session not found|not connected|http 404/i.test(error.message || "");
+}
+
 async function callTool(_clientIgnored, name, args) {
   await ensureMcpConnected();
+  const request = () => client.request(
+    { method: "tools/call", params: { name, arguments: args } },
+    CallToolResultSchema,
+  );
   try {
-    return await client.request(
-      { method: "tools/call", params: { name, arguments: args } },
-      CallToolResultSchema,
-    );
+    const result = await request();
+    mcpLastActivity = Date.now();
+    if (result.isError) throw new Error(getTextContent(result) || `${name} failed in Affinity.`);
+    return result;
   } catch (err) {
     // If the session dropped (bridge restarted, etc.), reconnect once and retry.
     if (isRecoverableMcpSessionError(err)) {
       mcpConnected = false;
+      if (!canRetryMcpTool(name, err)) throw err;
       await ensureMcpConnected();
-      return client.request(
-        { method: "tools/call", params: { name, arguments: args } },
-        CallToolResultSchema,
-      );
+      const result = await request();
+      mcpLastActivity = Date.now();
+      if (result.isError) throw new Error(getTextContent(result) || `${name} failed in Affinity.`);
+      return result;
     }
     throw err;
   }
@@ -1541,9 +1566,10 @@ app.whenReady().then(async () => {
             description: finalMetadata.description,
             code: codeWithMetadata,
           });
-        } catch (mcpErr) {}
-
-        return { success: true };
+          return { success: true, installed: true };
+        } catch (mcpErr) {
+          return { success: true, installed: false, warning: mcpErr.message };
+        }
       } catch (error) {
         return { success: false, error: error.message };
       }
@@ -1610,22 +1636,22 @@ app.whenReady().then(async () => {
       const fileNames = parseCsvTextContent(listResult).filter(
         (n) => n && !/^error/i.test(n) && n !== "preamble",
       ); // preamble is an init marker, not a user-facing topic
-      const docs = [];
-      for (const fileName of fileNames) {
-        try {
-          const readResult = await callTool(
-            client,
-            "read_sdk_documentation_topic",
-            { filename: fileName },
-          );
-          const content = getTextContent(readResult);
-          // Skip topics whose content is itself an error response.
-          if (content && !/^error[:\s]/i.test(content.trim())) {
-            docs.push({ title: fileName, content });
-          }
-        } catch (e) {}
-      }
-      return { success: true, data: docs };
+      return { success: true, data: fileNames.map((title) => ({ title })) };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("read-doc-topic", async (event, filename) => {
+    try {
+      if (typeof filename !== "string" || !/^[a-zA-Z0-9/_-]+\.(js|json)$/.test(filename) ||
+          filename.split("/").includes(".."))
+        throw new Error("Invalid documentation topic.");
+      const result = await callTool(client, "read_sdk_documentation_topic", { filename });
+      const content = getTextContent(result);
+      if (result.isError || !content || /^error[:\s]/i.test(content.trim()))
+        throw new Error(`Affinity could not load ${filename}.`);
+      return { success: true, data: content };
     } catch (error) {
       return { success: false, error: error.message };
     }

@@ -52,7 +52,7 @@
 
 **Bridge status:** In **My Scripts**, click **More info** for the Affinity MCP connection details, latency, and event log.
 
-**Reading the docs / searching the SDK:** Click **Documentation** in the sidebar to read SDK topics as Markdown, and use the search bar to query SDK hints directly.
+**Reading the docs / searching the SDK:** Click **Documentation** in the sidebar to list SDK topics, then open one to load and read it as Markdown. Opened topics are cached while the Affinity version stays the same. Use the search bar to query SDK hints directly.
 
 **Checking API changes:** The Documentation screen saves nine core JSLib modules from the connected Affinity version. After a newer version is seen, it compares method signatures with the previous snapshot, including parameter order, and offers a scan of scripts installed in Affinity. Scan results indicate possible impact only; unchanged signatures can still hide behavioral changes, and indirect calls may not be found. Up to three version snapshots are kept in the app's user data folder.
 

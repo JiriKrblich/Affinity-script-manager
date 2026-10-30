@@ -2211,11 +2211,16 @@ async function renderCommunity(root) {
 
   async function saveCommunityScriptToLibrary(script, button) {
     if (button) button.disabled = true;
-    const r = await window.api.saveCommunityScript(
-      script.download_url,
-      script.name,
-      communityScriptMetadata(script),
-    );
+    let r;
+    try {
+      r = await window.api.saveCommunityScript(
+        script.download_url,
+        script.name,
+        communityScriptMetadata(script),
+      );
+    } catch (error) {
+      r = { success: false, error: error.message };
+    }
     if (!r || !r.success) {
       alert((r && r.error) || "Save failed");
       if (button) button.disabled = false;
@@ -2231,11 +2236,16 @@ async function renderCommunity(root) {
       button.innerHTML = '<span class="loading">Installing</span>';
       button.disabled = true;
     }
-    const r = await window.api.downloadCommunityScript(
-      script.download_url,
-      script.name,
-      communityScriptMetadata(script),
-    );
+    let r;
+    try {
+      r = await window.api.downloadCommunityScript(
+        script.download_url,
+        script.name,
+        communityScriptMetadata(script),
+      );
+    } catch (error) {
+      r = { success: false, error: error.message };
+    }
     if (!r || !r.success) {
       alert((r && r.error) || "Download failed");
       if (button) {
@@ -2243,6 +2253,9 @@ async function renderCommunity(root) {
         button.disabled = false;
       }
       return false;
+    }
+    if (r.installed === false) {
+      alert(`Saved to My Scripts, but installation in Affinity failed: ${r.warning || "Bridge unavailable"}. Retry from My Scripts.`);
     }
     indexLocal({ file: `${scriptStem(script.name)}.js`, name: script.name, version: script.version });
     if (button) {
@@ -2854,7 +2867,7 @@ async function renderDocs(root) {
   body.appendChild(grid);
 }
 
-function openDocReader(doc) {
+async function openDocReader(doc) {
   const main = document.getElementById("main");
   main.innerHTML = "";
   main.scrollTop = 0;
@@ -2872,13 +2885,28 @@ function openDocReader(doc) {
   reader.appendChild(title);
 
   const content = document.createElement("div");
-  content.innerHTML =
-    window.marked && doc.content
-      ? window.marked.parse(doc.content)
-      : escapeHtml(doc.content || "");
+  content.innerHTML = '<span class="loading">Loading topic</span>';
   reader.appendChild(content);
 
   main.appendChild(reader);
+  if (doc.content == null) {
+    let result;
+    try {
+      result = await window.api.readDocTopic(doc.title);
+    } catch (error) {
+      if (reader.isConnected) content.textContent = error.message || "Could not load documentation topic.";
+      return;
+    }
+    if (!reader.isConnected) return;
+    if (!result?.success) {
+      content.textContent = result?.error || "Could not load documentation topic.";
+      return;
+    }
+    doc.content = result.data;
+  }
+  content.innerHTML = window.marked && doc.content
+    ? window.marked.parse(doc.content)
+    : escapeHtml(doc.content || "");
 }
 
 // ---------- Upload / Download modals ----------

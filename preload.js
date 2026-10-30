@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // --- Dokumentace a Hledání ---
   fetchDocs: () => ipcRenderer.invoke('fetch-docs'),
+  readDocTopic: (filename) => ipcRenderer.invoke('read-doc-topic', filename),
   searchDocs: (query) => ipcRenderer.invoke('search-docs', query),
   getApiMonitor: () => ipcRenderer.invoke('get-api-monitor'),
   syncApiMonitor: () => ipcRenderer.invoke('sync-api-monitor'),
