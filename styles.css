@@ -1953,6 +1953,17 @@ body.platform-darwin .community-sticky {
    Documentation (grid + reader)
    ============================================================ */
 
+.api-monitor { margin: 0 0 22px; padding: 18px 20px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--bg-card); }
+.api-monitor-head { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.api-monitor h2 { margin: 0 0 5px; font: 600 17px/1.3 var(--f-sans); }
+.api-monitor p { margin: 0 0 12px; color: var(--text-dim); font-size: 13px; line-height: 1.4; }
+.api-change-list { max-height: 360px; overflow: auto; margin: 8px 0 16px; border-top: 1px solid var(--border); }
+.api-change-row { display: grid; gap: 4px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.api-change-label { color: var(--text-dim); font-size: 11px; text-transform: capitalize; }
+.api-change-row code { display: block; overflow-wrap: anywhere; color: var(--text-strong); font-size: 12px; }
+.api-change-row code:last-child { color: var(--accent); }
+.api-scan-result { margin-top: 12px; }
+
 .docs-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);

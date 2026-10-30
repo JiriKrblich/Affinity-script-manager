@@ -2620,6 +2620,7 @@ async function renderCommunity(root) {
 
 // ---------- Documentation screen ----------
 let docsCache = null;
+let docsCacheVersion = null;
 
 async function renderDocs(root) {
   const screen = document.createElement("div");
@@ -2628,6 +2629,15 @@ async function renderDocs(root) {
     <div class="eyebrow">Support</div>
     <h1>Documentation</h1>
     <p class="subhead" id="docs-sub"><span class="loading">Fetching topics</span></p>
+
+    <section class="api-monitor">
+      <div class="api-monitor-head">
+        <div><h2>API changes</h2><p id="api-monitor-status">Checking Affinity version…</p></div>
+        <button class="gh-btn compact" id="api-monitor-refresh" disabled>Check now</button>
+      </div>
+      <div id="api-monitor-changes"></div>
+      <div id="api-monitor-scan"></div>
+    </section>
 
     <div class="search-bar" style="margin-bottom: 20px;">
       <div class="search-wrap">
@@ -2645,6 +2655,100 @@ async function renderDocs(root) {
   screen
     .querySelector("#docs-search-ico")
     .appendChild(Ico("search", { size: 13 }));
+
+  const monitorStatus = screen.querySelector("#api-monitor-status");
+  const monitorChanges = screen.querySelector("#api-monitor-changes");
+  const monitorScan = screen.querySelector("#api-monitor-scan");
+  const refreshMonitor = screen.querySelector("#api-monitor-refresh");
+  async function showApiMonitor(sync) {
+    refreshMonitor.disabled = true;
+    monitorStatus.textContent = sync ? "Checking the installed Affinity SDK…" : "Loading saved API snapshots…";
+    let result = sync ? await window.api.syncApiMonitor() : await window.api.getApiMonitor();
+    const syncError = sync && !result?.success ? result?.error || "Affinity is unavailable." : null;
+    if (syncError) {
+      const cached = await window.api.getApiMonitor();
+      if (cached?.success && cached.data.currentVersion) result = cached;
+    }
+    if (!screen.isConnected) return;
+    refreshMonitor.disabled = false;
+    monitorChanges.replaceChildren();
+    monitorScan.replaceChildren();
+    if (!result?.success) {
+      monitorStatus.textContent = result?.error || "Could not check Affinity SDK.";
+      return;
+    }
+    const { currentVersion, previousVersion, changes } = result.data;
+    if (currentVersion && currentVersion !== docsCacheVersion) {
+      docsCache = null;
+      docsCacheVersion = currentVersion;
+    }
+    if (!currentVersion) {
+      monitorStatus.textContent = "No SDK snapshot yet. Connect Affinity and click Check now.";
+      return;
+    }
+    if (!previousVersion) {
+      monitorStatus.textContent = `Affinity ${currentVersion} saved as the first snapshot. Changes will appear after the next Affinity version.`;
+      return;
+    }
+    monitorStatus.textContent = `${syncError ? "Saved comparison · " : ""}Affinity ${previousVersion} → ${currentVersion}: ${changes.length} method signature change${changes.length === 1 ? "" : "s"}.${syncError ? ` Current Affinity could not be checked: ${syncError}` : ""}`;
+    if (!changes.length) return;
+    const list = document.createElement("div");
+    list.className = "api-change-list";
+    for (const change of changes) {
+      const row = document.createElement("div");
+      row.className = "api-change-row";
+      const label = document.createElement("div");
+      label.className = "api-change-label";
+      label.textContent = `${change.module} · ${change.kind}`;
+      const before = document.createElement("code");
+      before.textContent = change.before || "—";
+      const after = document.createElement("code");
+      after.textContent = change.after || "—";
+      row.append(label, before, after);
+      list.appendChild(row);
+    }
+    monitorChanges.appendChild(list);
+    const scanButton = document.createElement("button");
+    scanButton.className = "gh-btn compact";
+    scanButton.textContent = "Find possibly affected scripts";
+    const scanResult = document.createElement("div");
+    scanResult.className = "api-scan-result";
+    scanButton.onclick = async () => {
+      scanButton.disabled = true;
+      scanResult.textContent = "Scanning scripts installed in Affinity…";
+      const result = await window.api.scanApiCompatibility();
+      if (!screen.isConnected) return;
+      scanButton.disabled = false;
+      if (!result?.success) {
+        scanResult.textContent = result?.error || "Could not scan scripts.";
+        return;
+      }
+      const { scripts, failed } = result.data;
+      scanResult.replaceChildren();
+      const summary = document.createElement("p");
+      summary.textContent = scripts.length
+        ? `${scripts.length} possibly affected script${scripts.length === 1 ? "" : "s"}. Review these calls before running them.`
+        : "No direct calls to changed methods were found. This does not guarantee compatibility.";
+      scanResult.appendChild(summary);
+      for (const script of scripts) {
+        const row = document.createElement("p");
+        row.textContent = `${script.title}: ${script.calls.join(", ")}`;
+        scanResult.appendChild(row);
+      }
+      if (failed) {
+        const warning = document.createElement("p");
+        warning.textContent = `${failed} script${failed === 1 ? "" : "s"} could not be read.`;
+        scanResult.appendChild(warning);
+      }
+    };
+    monitorScan.append(scanButton, scanResult);
+  }
+  refreshMonitor.onclick = async () => {
+    const previousVersion = docsCacheVersion;
+    await showApiMonitor(true);
+    if (screen.isConnected && docsCacheVersion !== previousVersion) renderScreen();
+  };
+  await showApiMonitor(true);
 
   // --- SDK search wired into the same screen ---
   const input = screen.querySelector("#docs-q");

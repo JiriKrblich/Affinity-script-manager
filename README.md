@@ -16,7 +16,7 @@
 * **Share to the community:** Publish a local or Affinity script to the community repository straight from the app. It prepares a ready-to-submit GitHub issue and copies it to your clipboard — no tokens, your GitHub credentials never touch the app.
 * **Shared favorites:** Favorites are unified across My Scripts and Community — star a script in one place and it's marked in the other.
 * **Built-in Code Editor:** Write new scripts from scratch or edit existing ones with a full Ace editor (JavaScript syntax highlighting, dark theme, `Cmd/Ctrl+S` to save, **Run** to try the current buffer). New scripts get a pre-filled metadata header template.
-* **In-App Documentation & SDK Search:** Fetch the Affinity SDK documentation from the MCP server and read it in a clean Markdown reader, and search SDK hints without leaving the app.
+* **In-App Documentation & SDK Search:** Fetch the Affinity SDK documentation from the MCP server and read it in a clean Markdown reader, and search SDK hints without leaving the app. The API changes panel saves versioned JSLib snapshots and compares method signatures after an Affinity update; an optional scan highlights scripts that may call changed methods.
 * **Updates panel & badges:** When community repos ship newer versions of scripts you have locally, they're grouped in an **Updates available** panel (with per-script and *Update all* actions) and flagged with a badge.
 * **Auto-Update Checker:** The app checks GitHub Releases on launch and shows an update button in the sidebar when a new version is available.
 * **Drag & Drop:** Drag one or more `.js` files anywhere onto the window. A full-window overlay appears, and after dropping you choose **Just save to My Scripts** or **Save & install**.
@@ -53,6 +53,8 @@
 **Bridge status:** In **My Scripts**, click **More info** for the Affinity MCP connection details, latency, and event log.
 
 **Reading the docs / searching the SDK:** Click **Documentation** in the sidebar to read SDK topics as Markdown, and use the search bar to query SDK hints directly.
+
+**Checking API changes:** The Documentation screen saves nine core JSLib modules from the connected Affinity version. After a newer version is seen, it compares method signatures with the previous snapshot, including parameter order, and offers a scan of scripts installed in Affinity. Scan results indicate possible impact only; unchanged signatures can still hide behavioral changes, and indirect calls may not be found. Up to three version snapshots are kept in the app's user data folder.
 
 ---
 

@@ -8,7 +8,8 @@
     "build": "electron-builder"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "latest"
+    "@modelcontextprotocol/sdk": "latest",
+    "acorn": "^8.19.0"
   },
   "devDependencies": {
     "electron": "latest",

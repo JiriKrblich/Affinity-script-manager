@@ -6,6 +6,7 @@ const {
   SSEClientTransport,
 } = require("@modelcontextprotocol/sdk/client/sse.js");
 const { CallToolResultSchema } = require("@modelcontextprotocol/sdk/types.js");
+const { MODULES, compareSnapshots, affectedCalls } = require("./api-monitor");
 
 const SERVER_URL = "http://localhost:6767/sse";
 const DEFAULT_REPO =
@@ -58,6 +59,87 @@ function parseCsvTextContent(result) {
         .filter(Boolean),
     ),
   ];
+}
+
+const apiSnapshotsDir = () => path.join(app.getPath("userData"), "docs_versions");
+let apiSyncPromise = null;
+let activeAffinityVersion = null;
+
+async function affinityVersion() {
+  const result = await callTool(client, "execute_script", {
+    script: "const { Application } = require('/application.js'); console.log(Application.shortVersion);",
+  });
+  const version = getTextContent(result).trim();
+  if (result.isError || !/^\d+(?:\.\d+){1,4}$/.test(version))
+    throw new Error("Affinity did not return a usable version.");
+  return version;
+}
+
+async function storedApiSnapshots() {
+  let names;
+  try { names = await fs.readdir(apiSnapshotsDir()); }
+  catch (error) { if (error.code === "ENOENT") return []; throw error; }
+  const snapshots = [];
+  for (const name of names.filter((n) => /^\d+(?:\.\d+){1,4}\.json$/.test(n))) {
+    try {
+      const snapshot = JSON.parse(await fs.readFile(path.join(apiSnapshotsDir(), name), "utf8"));
+      if (typeof snapshot.version === "string" && typeof snapshot.capturedAt === "string" &&
+          snapshot.modules && MODULES.every((m) => typeof snapshot.modules[m] === "string"))
+        snapshots.push(snapshot);
+    } catch (error) { console.warn("[API monitor] Ignoring unreadable snapshot:", name, error.message); }
+  }
+  return snapshots.sort((a, b) => b.capturedAt.localeCompare(a.capturedAt));
+}
+
+async function syncApiMonitor() {
+  if (apiSyncPromise) return apiSyncPromise;
+  apiSyncPromise = (async () => {
+    const version = await affinityVersion();
+    const existing = await storedApiSnapshots();
+    if (existing.some((s) => s.version === version)) {
+      activeAffinityVersion = version;
+      return version;
+    }
+    const list = await callTool(client, "list_sdk_documentation", {});
+    const available = new Set(parseCsvTextContent(list));
+    if (!MODULES.every((name) => available.has(name)))
+      throw new Error("Affinity did not provide all JSLib modules needed for comparison.");
+    const modules = {};
+    for (const name of MODULES) {
+      const result = await callTool(client, "read_sdk_documentation_topic", { filename: name });
+      const content = getTextContent(result);
+      if (result.isError || !content || /^error[:\s]/i.test(content.trim()))
+        throw new Error(`Could not read ${name} from Affinity.`);
+      modules[name] = content;
+    }
+    const previous = existing[0] || null;
+    const snapshot = {
+      version, capturedAt: new Date().toISOString(), modules,
+      previousVersion: previous?.version || null,
+      changes: previous ? compareSnapshots(previous, { modules }) : [],
+    };
+    await fs.mkdir(apiSnapshotsDir(), { recursive: true });
+    const target = path.join(apiSnapshotsDir(), `${version}.json`);
+    const temporary = `${target}.tmp`;
+    await fs.writeFile(temporary, JSON.stringify(snapshot), "utf8");
+    await fs.rename(temporary, target);
+    activeAffinityVersion = version;
+    for (const old of [...existing, snapshot].sort((a, b) => b.capturedAt.localeCompare(a.capturedAt)).slice(3))
+      await fs.rm(path.join(apiSnapshotsDir(), `${old.version}.json`), { force: true });
+    return version;
+  })().finally(() => { apiSyncPromise = null; });
+  return apiSyncPromise;
+}
+
+async function apiMonitorStatus() {
+  const snapshots = await storedApiSnapshots();
+  const current = snapshots.find((s) => s.version === activeAffinityVersion) || snapshots[0];
+  const previous = snapshots.find((s) => s.version !== current?.version);
+  return {
+    currentVersion: current?.version || null,
+    previousVersion: current?.previousVersion || previous?.version || null,
+    changes: current?.changes || (current && previous ? compareSnapshots(previous, current) : []),
+  };
 }
 
 // GitHub's raw CDN (raw.githubusercontent.com) caches files for ~5 minutes, so a
@@ -1563,6 +1645,39 @@ app.whenReady().then(async () => {
     }
   });
 
+  ipcMain.handle("get-api-monitor", async () => {
+    try { return { success: true, data: await apiMonitorStatus() }; }
+    catch (error) { return { success: false, error: error.message }; }
+  });
+
+  ipcMain.handle("sync-api-monitor", async () => {
+    try {
+      await syncApiMonitor();
+      return { success: true, data: await apiMonitorStatus() };
+    } catch (error) { return { success: false, error: error.message }; }
+  });
+
+  ipcMain.handle("scan-api-compatibility", async () => {
+    try {
+      const { changes } = await apiMonitorStatus();
+      if (!changes.length) return { success: true, data: { scripts: [], failed: 0 } };
+      const list = await callTool(client, "list_library_scripts", {});
+      const listText = getTextContent(list).trim();
+      const titles = !listText || listText === "{}" ? [] : parseCsvTextContent(list);
+      const scripts = [];
+      let failed = 0;
+      for (const title of titles) {
+        try {
+          const result = await callTool(client, "read_library_script", { title });
+          if (result.isError) throw new Error("Could not read script.");
+          const calls = affectedCalls(getTextContent(result), changes);
+          if (calls.length) scripts.push({ title, calls });
+        } catch { failed++; }
+      }
+      return { success: true, data: { scripts, failed } };
+    } catch (error) { return { success: false, error: error.message }; }
+  });
+
   async function checkForUpdates(isManualCheck = false) {
     try {
       const currentVersion = app.getVersion();
@@ -1617,6 +1732,10 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("check-updates", async () => await checkForUpdates(true));
   win.webContents.once("did-finish-load", () => checkForUpdates(false));
+
+  // A version check is cheap when a snapshot already exists; new versions trigger the JSLib capture.
+  setTimeout(() => syncApiMonitor().catch((error) =>
+    console.warn("[API monitor] Sync deferred:", error.message)), 5000);
 
   win.loadFile("index.html");
 });
