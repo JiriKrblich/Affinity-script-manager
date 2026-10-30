@@ -91,6 +91,9 @@ body {
 ::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.16);
 }
+::-webkit-scrollbar-corner {
+    background: var(--bg-app);
+}
 
 /* ============================================================
    Primitives
@@ -644,7 +647,8 @@ body.platform-darwin .sidebar.collapsed .brand-lockup {
     flex: 1;
     min-width: 0;
     background: var(--bg-app);
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
     position: relative;
 }
 .main::before {
@@ -1979,9 +1983,12 @@ body.platform-darwin .community-sticky {
 .api-change-row code:last-child { color: var(--accent); }
 .api-scan-result { margin-top: 12px; }
 
+.resource-sections { display: grid; min-width: 0; gap: 36px; }
+.resource-section { min-width: 0; }
+.resource-section h2 { margin: 0 0 16px; color: var(--text-strong); font: 600 18px/1.3 var(--f-sans); }
 .resource-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
     gap: 18px;
     max-width: 1200px;
 }
@@ -2044,7 +2051,6 @@ body.platform-darwin .community-sticky {
     border-radius: 18px;
     background: rgba(0,0,0,.12);
 }
-.resource-preview-markdown { background: linear-gradient(130deg, #263a35, #1b2a2d); color: #a9e9ce; }
 .resource-preview-official { background: linear-gradient(130deg, #2e3149, #1c263b); color: #c2c8ff; }
 .resource-preview-mcp { background: linear-gradient(130deg, #403227, #292721); color: #f5d29c; }
 .resource-preview-guide { background: linear-gradient(130deg, #253b47, #1c2933); color: #a9dff0; }

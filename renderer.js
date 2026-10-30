@@ -2723,15 +2723,7 @@ async function renderCommunity(root) {
 // ---------- Useful links ----------
 const RESOURCE_LINKS = [
   {
-    title: "nav.communitySdkMarkdown",
-    description: "resources.communityDescription",
-    url: "https://github.com/user-attachments/files/27301745/Affinity_API_Docs.md",
-    domain: "github.com",
-    icon: "file",
-    mark: "MD",
-    theme: "markdown",
-  },
-  {
+    group: "official",
     title: "nav.officialAffinitySdk",
     description: "resources.officialDescription",
     url: "https://sdk.affinity.studio/",
@@ -2741,6 +2733,7 @@ const RESOURCE_LINKS = [
     theme: "official",
   },
   {
+    group: "community",
     title: "nav.codexAffinityMcp",
     description: "resources.mcpDescription",
     url: "https://github.com/Stolgeth/mcp.af",
@@ -2751,6 +2744,7 @@ const RESOURCE_LINKS = [
     image: "assets/resource-mcp-wordmark.svg",
   },
   {
+    group: "community",
     title: "resources.setupGuideTitle",
     description: "resources.setupGuideDescription",
     url: "https://bolloplayer.github.io/affinity-mcp-setup/",
@@ -2769,10 +2763,17 @@ function renderResources(root) {
     <div class="eyebrow">${escapeHtml(t("nav.support"))}</div>
     <h1>${escapeHtml(t("nav.resources"))}</h1>
     <p class="subhead">${escapeHtml(t("resources.subtitle"))}</p>
-    <div class="resource-grid"></div>
+    <div class="resource-sections"></div>
   `;
   root.appendChild(screen);
-  const grid = screen.querySelector(".resource-grid");
+  const grids = {};
+  for (const group of ["official", "community"]) {
+    const section = document.createElement("section");
+    section.className = "resource-section";
+    section.innerHTML = `<h2>${escapeHtml(t(`resources.${group}Section`))}</h2><div class="resource-grid"></div>`;
+    screen.querySelector(".resource-sections").appendChild(section);
+    grids[group] = section.querySelector(".resource-grid");
+  }
   for (const resource of RESOURCE_LINKS) {
     const card = document.createElement("button");
     card.type = "button";
@@ -2794,7 +2795,7 @@ function renderResources(root) {
     if (!resource.image) card.querySelector(".resource-preview-icon").appendChild(Ico(resource.icon, { size: 32, sw: 1.4 }));
     card.querySelector(".resource-card-external").appendChild(Ico("external", { size: 12 }));
     card.onclick = () => window.api.openUrl(resource.url);
-    grid.appendChild(card);
+    grids[resource.group].appendChild(card);
   }
 }
 
