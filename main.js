@@ -7,6 +7,7 @@ const {
 } = require("@modelcontextprotocol/sdk/client/sse.js");
 const { CallToolResultSchema } = require("@modelcontextprotocol/sdk/types.js");
 const { MODULES, compareSnapshots, affectedCalls } = require("./api-monitor");
+const { APP_LANGUAGES, initialAppLanguage } = require("./language");
 
 const SERVER_URL = "http://localhost:6767/sse";
 const DEFAULT_REPO =
@@ -517,6 +518,11 @@ async function getConfig() {
 
   if (typeof config.sidebarCollapsed !== "boolean") {
     config.sidebarCollapsed = false;
+    needsSave = true;
+  }
+  if (!APP_LANGUAGES.includes(config.language)) {
+    config.language = config.language == null
+      ? initialAppLanguage(app.getPreferredSystemLanguages()[0]) : "en";
     needsSave = true;
   }
   if (!["spaces", "tabs"].includes(config.editorIndentStyle)) {
@@ -1522,6 +1528,43 @@ app.whenReady().then(async () => {
     } catch (error) {
       return { success: false, error: error.message };
     }
+  });
+
+  ipcMain.handle("get-locale", async (event, language) => {
+    try {
+      if (typeof language !== "string" || !/^[a-z]{2}(?:-[A-Z]{2})?$/.test(language))
+        throw new Error("Invalid language code.");
+      const readMessages = async (code) => {
+        const content = await fs.readFile(path.join(__dirname, "locales", `${code}.json`), "utf8");
+        const messages = JSON.parse(content);
+        if (!messages || typeof messages !== "object" || Array.isArray(messages) ||
+            Object.values(messages).some((value) => typeof value !== "string"))
+          throw new Error(`Invalid ${code} language dictionary.`);
+        return messages;
+      };
+      const english = await readMessages("en");
+      const translated = language === "en" ? {} : await readMessages(language);
+      return { success: true, data: { ...english, ...translated } };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("get-app-language", async () => {
+    try {
+      const config = await getConfig();
+      return { success: true, data: config.language };
+    } catch (error) { return { success: false, error: error.message }; }
+  });
+
+  ipcMain.handle("set-app-language", async (event, language) => {
+    try {
+      if (!APP_LANGUAGES.includes(language)) throw new Error("Unsupported language.");
+      const config = await getConfig();
+      config.language = language;
+      await saveConfig(config);
+      return { success: true, data: language };
+    } catch (error) { return { success: false, error: error.message }; }
   });
 
   ipcMain.handle("set-editor-settings", async (event, settings) => {

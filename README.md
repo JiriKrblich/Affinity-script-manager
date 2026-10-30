@@ -1,4 +1,6 @@
 # Script Manager for Affinity
+
+The UI message catalogs are in `locales/` for English, Czech, Japanese, Simplified Chinese, Korean, German, French, and Spanish. On first launch, the app selects a supported system language; all others use English. Change the language later in **App Settings → General**. Catalog entries use `t("key")` and optional `{placeholder}` values, with English fallback for missing translations.
 ![Cover photo with screenshot of Script Manager](readme/AffinityScriptManager_1.4.0_Overview.webp)
 
 ## Features

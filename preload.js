@@ -57,6 +57,9 @@ contextBridge.exposeInMainWorld('api', {
   getSidebarCollapsed: () => ipcRenderer.invoke('get-sidebar-collapsed'),
   setSidebarCollapsed: (collapsed) => ipcRenderer.invoke('set-sidebar-collapsed', collapsed),
   getEditorSettings: () => ipcRenderer.invoke('get-editor-settings'),
+  getLocale: (language) => ipcRenderer.invoke('get-locale', language),
+  getAppLanguage: () => ipcRenderer.invoke('get-app-language'),
+  setAppLanguage: (language) => ipcRenderer.invoke('set-app-language', language),
   setEditorSettings: (settings) => ipcRenderer.invoke('set-editor-settings', settings),
   onReposChanged: (callback) => ipcRenderer.on('repos-changed', callback), // NOVÉ
 
