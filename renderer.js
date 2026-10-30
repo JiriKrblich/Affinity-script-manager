@@ -100,6 +100,7 @@ const NAV_SECTIONS = [
     label: "nav.support",
     items: [
       { id: "docs", name: "nav.documentation", icon: "book" },
+      { id: "resources", name: "nav.resources", icon: "link" },
       {
         id: "issues",
         name: "nav.issues",
@@ -191,6 +192,7 @@ async function renderScreen() {
     community: renderCommunity,
     develop: renderDevelop,
     docs: renderDocs,
+    resources: renderResources,
     "app-settings": renderAppSettings,
     editor: renderEditor,
   };
@@ -2715,6 +2717,84 @@ async function renderCommunity(root) {
     window.api.onReposChanged(() => {
       if (state.nav === "community") renderScreen();
     });
+  }
+}
+
+// ---------- Useful links ----------
+const RESOURCE_LINKS = [
+  {
+    title: "nav.communitySdkMarkdown",
+    description: "resources.communityDescription",
+    url: "https://github.com/user-attachments/files/27301745/Affinity_API_Docs.md",
+    domain: "github.com",
+    icon: "file",
+    mark: "MD",
+    theme: "markdown",
+  },
+  {
+    title: "nav.officialAffinitySdk",
+    description: "resources.officialDescription",
+    url: "https://sdk.affinity.studio/",
+    domain: "sdk.affinity.studio",
+    icon: "book",
+    mark: "SDK",
+    theme: "official",
+  },
+  {
+    title: "nav.codexAffinityMcp",
+    description: "resources.mcpDescription",
+    url: "https://github.com/Stolgeth/mcp.af",
+    domain: "github.com/Stolgeth/mcp.af",
+    icon: "plug",
+    mark: "MCP",
+    theme: "mcp",
+    image: "assets/resource-mcp-wordmark.svg",
+  },
+  {
+    title: "resources.setupGuideTitle",
+    description: "resources.setupGuideDescription",
+    url: "https://bolloplayer.github.io/affinity-mcp-setup/",
+    domain: "bolloplayer.github.io",
+    icon: "book",
+    mark: "GUIDE",
+    theme: "guide",
+    image: "assets/resource-affinity-mcp-guide.jpg",
+  },
+];
+
+function renderResources(root) {
+  const screen = document.createElement("div");
+  screen.className = "screen";
+  screen.innerHTML = `
+    <div class="eyebrow">${escapeHtml(t("nav.support"))}</div>
+    <h1>${escapeHtml(t("nav.resources"))}</h1>
+    <p class="subhead">${escapeHtml(t("resources.subtitle"))}</p>
+    <div class="resource-grid"></div>
+  `;
+  root.appendChild(screen);
+  const grid = screen.querySelector(".resource-grid");
+  for (const resource of RESOURCE_LINKS) {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "resource-card";
+    card.setAttribute("aria-label", `${t("resources.openLink")}: ${t(resource.title)}`);
+    card.innerHTML = `
+      <span class="resource-preview resource-preview-${resource.theme}${resource.image ? " resource-preview-image" : ""}">
+        ${resource.image ? `<img class="resource-preview-photo" src="${escapeHtml(resource.image)}" alt="" loading="lazy">` : `<span class="resource-preview-icon"></span><span class="resource-preview-mark">${escapeHtml(resource.mark)}</span>`}
+      </span>
+      <span class="resource-card-content">
+        <strong class="resource-card-title">${escapeHtml(t(resource.title))}</strong>
+        <span class="resource-card-description">${escapeHtml(t(resource.description))}</span>
+        <span class="resource-card-footer">
+          <span class="resource-card-domain">${escapeHtml(resource.domain)}</span>
+          <span class="resource-card-action">${escapeHtml(t("resources.openLink"))}<span class="resource-card-external"></span></span>
+        </span>
+      </span>
+    `;
+    if (!resource.image) card.querySelector(".resource-preview-icon").appendChild(Ico(resource.icon, { size: 32, sw: 1.4 }));
+    card.querySelector(".resource-card-external").appendChild(Ico("external", { size: 12 }));
+    card.onclick = () => window.api.openUrl(resource.url);
+    grid.appendChild(card);
   }
 }
 
