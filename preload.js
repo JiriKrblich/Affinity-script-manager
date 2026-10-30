@@ -35,7 +35,7 @@ contextBridge.exposeInMainWorld('api', {
   toggleFavorite: (stem) => ipcRenderer.invoke('toggle-favorite', stem),
 
   // --- Komunitní Marketplace ---
-  listCommunityScripts: () => ipcRenderer.invoke('list-community-scripts'),
+  listCommunityScripts: (verifyFiles = false) => ipcRenderer.invoke('list-community-scripts', verifyFiles),
   listScriptHistory: (script) => ipcRenderer.invoke('list-script-history', script),
   saveScriptRevision: (script, sha, action, filename) => ipcRenderer.invoke('save-script-revision', script, sha, action, filename),
   downloadCommunityScript: (url, filename, metadata) => ipcRenderer.invoke('download-community-script', url, filename, metadata),

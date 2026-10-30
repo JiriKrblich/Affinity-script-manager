@@ -1979,7 +1979,7 @@ async function renderCommunity(root) {
     Array.from({ length: 8 }).map(communitySkeletonCard).join(""),
   );
 
-  const res = await window.api.listCommunityScripts();
+  const res = await window.api.listCommunityScripts(true);
   const scripts = res && res.success ? res.data || [] : [];
   renderCommunityErrors(screen.querySelector("#c-errors"), res);
   const favoritesRes = await window.api.getFavorites();
@@ -2020,6 +2020,8 @@ async function renderCommunity(root) {
   }
   // Button appearance for a community script's install state.
   function communityBtnSpec(s) {
+    if (s._unavailableReason)
+      return { cls: " unavailable", label: t("community.scriptUnavailable"), disabled: true };
     const st = communityInstallState(s);
     if (st === "installed")
       return { cls: " installed", label: `✓ ${t("community.inLibrary")}`, disabled: true };
@@ -2031,6 +2033,7 @@ async function renderCommunity(root) {
   // Install-button click: install fresh, or (for the update state) open the same
   // explanatory popup as My Scripts so users understand Affinity can't overwrite.
   function handleCommunityInstallClick(s, button) {
+    if (s._unavailableReason) return;
     if (communityInstallState(s) !== "update") {
       installCommunityScript(s, button);
       return;
@@ -2218,6 +2221,7 @@ async function renderCommunity(root) {
         <h3>${escapeHtml(s.name || "(untitled)")}</h3>
         <div class="cc-author">${escapeHtml(t("community.by", { author: s.author || "community" }))}</div>
         <p class="cc-desc">${escapeHtml(s.description || "")}</p>
+        ${s._unavailableReason ? `<p class="community-unavailable-note">${escapeHtml(t("community.scriptUnavailableHelp"))}</p>` : ""}
         <div class="cc-actions">
           <button class="accent-btn compact cc-install${spec.cls}"${spec.disabled ? " disabled" : ""}>${escapeHtml(spec.label)}</button>
           <button class="gh-btn compact cc-details">${escapeHtml(t("community.details"))}</button>
@@ -2235,6 +2239,7 @@ async function renderCommunity(root) {
     }
 
     const installBtn = slide.querySelector(".cc-install");
+    if (s._unavailableReason) installBtn.title = t("community.scriptUnavailableHelp");
     installBtn.onclick = (e) => {
       e.stopPropagation();
       handleCommunityInstallClick(s, installBtn);
@@ -2282,6 +2287,7 @@ async function renderCommunity(root) {
   }
 
   async function saveCommunityScriptToLibrary(script, button) {
+    if (script._unavailableReason) return false;
     if (button) button.disabled = true;
     let r;
     try {
@@ -2393,6 +2399,7 @@ async function renderCommunity(root) {
                 ? escapeHtml(script.description)
                 : `<span class="community-detail-desc-empty">${escapeHtml(t("community.noDescription"))}</span>`
             }</div>
+            ${script._unavailableReason ? `<p class="community-unavailable-note">${escapeHtml(t("community.scriptUnavailableHelp"))}</p>` : ""}
             <div class="community-history">
               <button class="gh-btn" id="m-history">${escapeHtml(t("community.versionHistory"))}</button>
             </div>
@@ -2527,6 +2534,8 @@ async function renderCommunity(root) {
     };
 
     const saveBtn = bd.querySelector("#m-save");
+    saveBtn.disabled = !!script._unavailableReason;
+    if (script._unavailableReason) saveBtn.title = t("community.scriptUnavailableHelp");
     saveBtn.appendChild(Ico("download", { size: 14, sw: 1.4 }));
     saveBtn.append(document.createTextNode(" Download"));
     saveBtn.onclick = async () => {
@@ -2543,11 +2552,13 @@ async function renderCommunity(root) {
     };
 
     const runBtn = bd.querySelector("#m-run");
+    runBtn.disabled = !!script._unavailableReason;
     runBtn.querySelector("#ico-run").appendChild(Ico("terminal", { size: 13 }));
     runBtn.onclick = () =>
       openRunModal({ downloadUrl: script.download_url, name: script.name });
 
     const installBtn = bd.querySelector("#m-install");
+    if (script._unavailableReason) installBtn.title = t("community.scriptUnavailableHelp");
     installBtn.onclick = () => handleCommunityInstallClick(script, installBtn);
   }
 
@@ -2640,6 +2651,7 @@ async function renderCommunity(root) {
         </div>
         <div class="author">${escapeHtml(t("community.by", { author: s.author || "community" }))}</div>
         <div class="desc">${escapeHtml(s.description || "")}</div>
+        ${s._unavailableReason ? `<div class="community-unavailable-note">${escapeHtml(t("community.scriptUnavailableHelp"))}</div>` : ""}
         <div class="foot">
           <span class="tag">${escapeHtml((s.category || "other").toLowerCase())}</span>
           <div style="display:flex; gap:6px; align-items:center;">
@@ -2668,6 +2680,8 @@ async function renderCommunity(root) {
       };
 
       const saveBtn = card.querySelector(".c-save");
+      saveBtn.disabled = !!s._unavailableReason;
+      if (s._unavailableReason) saveBtn.title = t("community.scriptUnavailableHelp");
       saveBtn.appendChild(Ico("download", { size: 13, sw: 1.4 }));
       saveBtn.onclick = async (e) => {
         e.stopPropagation();
@@ -2683,6 +2697,7 @@ async function renderCommunity(root) {
       };
 
       const btn = card.querySelector(".install-btn");
+      if (s._unavailableReason) btn.title = t("community.scriptUnavailableHelp");
       btn.onclick = (e) => {
         e.stopPropagation();
         handleCommunityInstallClick(s, btn);

@@ -56,6 +56,8 @@
   "community.by": "por {author}",
   "community.noPreview": "Sin imagen de vista previa",
   "community.previewUnavailable": "Vista previa no disponible",
+  "community.scriptUnavailable": "Archivo del script no disponible",
+  "community.scriptUnavailableHelp": "Esta entrada no se puede instalar. Comprueba su ID, la URL de descarga y el archivo en el repositorio, y vuelve a cargar Comunidad.",
   "community.versionHistory": "Historial de versiones",
   "community.runWithoutInstall": "Ejecutar sin instalar",
   "community.noDescription": "No se ha proporcionado una descripción.",

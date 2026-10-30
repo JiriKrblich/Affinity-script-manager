@@ -56,6 +56,8 @@
   "community.by": "作者: {author}",
   "community.noPreview": "プレビュー画像なし",
   "community.previewUnavailable": "プレビューを表示できません",
+  "community.scriptUnavailable": "スクリプトファイルを利用できません",
+  "community.scriptUnavailableHelp": "この項目はインストールできません。リポジトリ内の ID、ダウンロード URL、スクリプトファイルを確認してから、コミュニティを再読み込みしてください。",
   "community.versionHistory": "バージョン履歴",
   "community.runWithoutInstall": "インストールせずに実行",
   "community.noDescription": "説明はありません。",

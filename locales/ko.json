@@ -56,6 +56,8 @@
   "community.by": "작성자: {author}",
   "community.noPreview": "미리보기 이미지 없음",
   "community.previewUnavailable": "미리보기를 표시할 수 없음",
+  "community.scriptUnavailable": "스크립트 파일을 사용할 수 없음",
+  "community.scriptUnavailableHelp": "이 항목은 설치할 수 없습니다. 저장소의 ID, 다운로드 URL, 스크립트 파일을 확인한 뒤 커뮤니티를 다시 불러오세요.",
   "community.versionHistory": "버전 기록",
   "community.runWithoutInstall": "설치하지 않고 실행",
   "community.noDescription": "설명이 없습니다.",

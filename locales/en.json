@@ -56,6 +56,8 @@
   "community.by": "by {author}",
   "community.noPreview": "No preview image",
   "community.previewUnavailable": "Preview unavailable",
+  "community.scriptUnavailable": "Script file unavailable",
+  "community.scriptUnavailableHelp": "This registry entry cannot be installed. Check its ID, download URL, and script file in the repository, then reload Community.",
   "community.versionHistory": "Version history",
   "community.runWithoutInstall": "Run without install",
   "community.noDescription": "No description provided.",

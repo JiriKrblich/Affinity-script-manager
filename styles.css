@@ -1768,6 +1768,21 @@ body.platform-darwin .community-sticky {
     color: var(--text-faint);
     cursor: default;
 }
+.community-unavailable-note {
+    color: var(--warn);
+    font-size: 12px;
+    line-height: 1.5;
+    margin: 8px 0;
+}
+.c-card .install-btn.unavailable,
+.c-card .install-btn.unavailable:hover,
+.cc-install.unavailable,
+.community-detail-actions .accent-btn.unavailable {
+    background: var(--bg-hover);
+    border-color: var(--border);
+    color: var(--text-faint);
+    cursor: not-allowed;
+}
 .c-card .install-btn.update {
     background: var(--warn);
     border-color: var(--warn);

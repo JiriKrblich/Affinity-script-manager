@@ -56,6 +56,8 @@
   "community.by": "作者：{author}",
   "community.noPreview": "无预览图",
   "community.previewUnavailable": "预览不可用",
+  "community.scriptUnavailable": "脚本文件不可用",
+  "community.scriptUnavailableHelp": "无法安装此条目。请检查仓库中的 ID、下载 URL 和脚本文件，然后重新加载社区页面。",
   "community.versionHistory": "版本历史",
   "community.runWithoutInstall": "无需安装即可运行",
   "community.noDescription": "暂无描述。",

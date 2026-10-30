@@ -56,6 +56,8 @@
   "community.by": "von {author}",
   "community.noPreview": "Kein Vorschaubild",
   "community.previewUnavailable": "Vorschau nicht verfügbar",
+  "community.scriptUnavailable": "Skriptdatei nicht verfügbar",
+  "community.scriptUnavailableHelp": "Dieser Eintrag kann nicht installiert werden. Prüfen Sie ID, Download-URL und Skriptdatei im Repository und laden Sie Community erneut.",
   "community.versionHistory": "Versionsverlauf",
   "community.runWithoutInstall": "Ohne Installation ausführen",
   "community.noDescription": "Keine Beschreibung vorhanden.",

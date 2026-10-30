@@ -56,6 +56,8 @@
   "community.by": "par {author}",
   "community.noPreview": "Aucune image d’aperçu",
   "community.previewUnavailable": "Aperçu indisponible",
+  "community.scriptUnavailable": "Fichier du script indisponible",
+  "community.scriptUnavailableHelp": "Cette entrée ne peut pas être installée. Vérifiez son ID, son URL de téléchargement et son fichier dans le dépôt, puis rechargez Communauté.",
   "community.versionHistory": "Historique des versions",
   "community.runWithoutInstall": "Exécuter sans installer",
   "community.noDescription": "Aucune description fournie.",

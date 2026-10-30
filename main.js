@@ -8,6 +8,7 @@ const {
 const { CallToolResultSchema } = require("@modelcontextprotocol/sdk/types.js");
 const { MODULES, compareSnapshots, affectedCalls } = require("./api-monitor");
 const { APP_LANGUAGES, initialAppLanguage } = require("./language");
+const { markScriptAvailability } = require("./community-availability");
 
 const SERVER_URL = "http://localhost:6767/sse";
 const DEFAULT_REPO =
@@ -188,6 +189,24 @@ async function fetchFresh(url, options = {}) {
       if (attempt || options.signal?.aborted) throw error;
     }
   }
+}
+
+const scriptAvailabilityCache = new Map();
+async function communityScriptExists(url) {
+  const cached = scriptAvailabilityCache.get(url);
+  if (cached && cached.expires > Date.now()) return cached.exists;
+  let response = await fetchFresh(url, { method: "HEAD", signal: AbortSignal.timeout(6000) });
+  // Some custom repositories reject HEAD even though GET works.
+  if (response.status === 405 || response.status === 501) {
+    response = await fetchFresh(url, {
+      headers: { Range: "bytes=0-0" },
+      signal: AbortSignal.timeout(6000),
+    });
+    await response.body?.cancel();
+  }
+  const exists = response.status !== 404 && response.status !== 410;
+  if (exists) scriptAvailabilityCache.set(url, { exists, expires: Date.now() + 5 * 60_000 });
+  return exists;
 }
 
 function githubScriptLocation(script) {
@@ -1308,7 +1327,7 @@ app.whenReady().then(async () => {
     }
   });
 
-  ipcMain.handle("list-community-scripts", async () => {
+  ipcMain.handle("list-community-scripts", async (event, verifyFiles = false) => {
     try {
       const config = await getConfig();
       let allScripts = [];
@@ -1376,7 +1395,13 @@ app.whenReady().then(async () => {
         }));
         allScripts = allScripts.concat(scriptsWithSource);
       }
-      return { success: true, data: allScripts, errors: repoErrors };
+      return {
+        success: true,
+        data: verifyFiles
+          ? await markScriptAvailability(allScripts, communityScriptExists)
+          : allScripts,
+        errors: repoErrors,
+      };
     } catch (error) {
       return { success: false, error: error.message };
     }
