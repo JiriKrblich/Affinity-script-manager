@@ -46,6 +46,12 @@ contextBridge.exposeInMainWorld('api', {
   fetchDocs: () => ipcRenderer.invoke('fetch-docs'),
   readDocTopic: (filename) => ipcRenderer.invoke('read-doc-topic', filename),
   searchDocs: (query) => ipcRenderer.invoke('search-docs', query),
+  exportDocs: () => ipcRenderer.invoke('export-docs'),
+  onDocsProgress: (callback) => {
+    const listener = (_event, progress) => callback(progress);
+    ipcRenderer.on('sdk-docs-progress', listener);
+    return () => ipcRenderer.removeListener('sdk-docs-progress', listener);
+  },
   getApiMonitor: () => ipcRenderer.invoke('get-api-monitor'),
   syncApiMonitor: () => ipcRenderer.invoke('sync-api-monitor'),
   scanApiCompatibility: () => ipcRenderer.invoke('scan-api-compatibility'),

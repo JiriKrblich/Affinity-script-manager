@@ -9,8 +9,9 @@ const { CallToolResultSchema } = require("@modelcontextprotocol/sdk/types.js");
 const { MODULES, compareSnapshots, affectedCalls } = require("./api-monitor");
 const { APP_LANGUAGES, initialAppLanguage } = require("./language");
 const { markScriptAvailability } = require("./community-availability");
+const { topicNames, markdownForSnapshot, searchSnapshot } = require("./sdk-docs");
 
-const SERVER_URL = "http://localhost:6767/sse";
+const SERVER_URLS = ["http://[::1]:6767/sse", "http://127.0.0.1:6767/sse"];
 const DEFAULT_REPO =
   "https://raw.githubusercontent.com/JiriKrblich/Affinity-Community-Scripts/refs/heads/main/registry.json";
 const COMMUNITY_ISSUES_URL =
@@ -112,6 +113,68 @@ async function storedApiSnapshots() {
     } catch (error) { console.warn("[API monitor] Ignoring unreadable snapshot:", name, error.message); }
   }
   return snapshots.sort((a, b) => b.capturedAt.localeCompare(a.capturedAt));
+}
+
+const sdkDocsCachePath = () => path.join(app.getPath("userData"), "sdk_docs_snapshot.json");
+let sdkDocsPromise = null;
+
+async function cachedSdkDocs() {
+  try {
+    const data = JSON.parse(await fs.readFile(sdkDocsCachePath(), "utf8"));
+    if (typeof data.version === "string" && Array.isArray(data.topics) &&
+        data.topics.every((topic) => typeof topic.title === "string" && typeof topic.content === "string"))
+      return data;
+  } catch {}
+  return null;
+}
+
+async function completeSdkDocsSnapshot() {
+  if (sdkDocsPromise) return sdkDocsPromise;
+  sdkDocsPromise = (async () => {
+    const cached = await cachedSdkDocs();
+    let version;
+    try { version = await affinityVersion(); }
+    catch (error) {
+      if (cached) return { snapshot: cached, cached: true };
+      throw error;
+    }
+    if (cached?.version === version) return { snapshot: cached, cached: false };
+    try {
+      const list = await callTool(client, "list_sdk_documentation", {});
+      const names = topicNames(list);
+      const topics = [];
+      for (const name of names) {
+        let content;
+        let lastError;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const result = await callTool(client, "read_sdk_documentation_topic", { filename: name });
+            content = getTextContent(result);
+            if (!content || /^error[:\s]/i.test(content.trim()))
+              throw new Error(content || "Empty response");
+            break;
+          } catch (error) {
+            lastError = error;
+          }
+        }
+        if (!content || /^error[:\s]/i.test(content.trim()))
+          throw new Error(`Could not read ${name} from Affinity: ${lastError?.message || "Unknown error"}`);
+        topics.push({ title: name, content });
+        if (win && !win.isDestroyed())
+          win.webContents.send("sdk-docs-progress", { done: topics.length, total: names.length });
+      }
+      const snapshot = { version, capturedAt: new Date().toISOString(), topics };
+      const target = sdkDocsCachePath();
+      const temporary = `${target}.tmp`;
+      await fs.writeFile(temporary, JSON.stringify(snapshot), "utf8");
+      await fs.rename(temporary, target);
+      return { snapshot, cached: false };
+    } catch (error) {
+      if (cached) return { snapshot: cached, cached: true };
+      throw error;
+    }
+  })().finally(() => { sdkDocsPromise = null; });
+  return sdkDocsPromise;
 }
 
 async function syncApiMonitor() {
@@ -424,12 +487,27 @@ async function ensureMcpConnected() {
           await transport.close();
         } catch {}
       }
-      client = new Client({ name: "script-mgr-ui", version: "1.0.0" });
-      transport = new SSEClientTransport(new URL(SERVER_URL));
-      const connectedClient = client;
-      client.onclose = () => { if (client === connectedClient) mcpConnected = false; };
-      client.onerror = () => { if (client === connectedClient) mcpConnected = false; };
-      await client.connect(transport);
+      client = null;
+      transport = null;
+      let lastError;
+      let connected = false;
+      for (const url of SERVER_URLS) {
+        const candidate = new Client({ name: "script-mgr-ui", version: "1.0.0" });
+        const candidateTransport = new SSEClientTransport(new URL(url));
+        try {
+          await candidate.connect(candidateTransport);
+          client = candidate;
+          transport = candidateTransport;
+          candidate.onclose = () => { if (client === candidate) mcpConnected = false; };
+          candidate.onerror = () => { if (client === candidate) mcpConnected = false; };
+          connected = true;
+          break;
+        } catch (error) {
+          lastError = error;
+          try { await candidateTransport.close(); } catch {}
+        }
+      }
+      if (!connected) throw lastError || new Error("Affinity MCP is unavailable.");
       // Affinity's MCP requires reading the preamble doc once per session before other
       // SDK-doc tools will return real data — otherwise list_sdk_documentation etc. respond
       // with an "ERROR: Listing failed" payload. Prime it best-effort.
@@ -1695,21 +1773,13 @@ app.whenReady().then(async () => {
   ipcMain.handle("fetch-docs", async () => {
     try {
       const listResult = await callTool(client, "list_sdk_documentation", {});
-      const rawText = getTextContent(listResult).trim();
-      // Affinity's tools occasionally return an error message as content with a successful RPC.
-      if (!rawText || /^error[:\s]/i.test(rawText)) {
-        return {
-          success: false,
-          error:
-            "Affinity did not return a topic list: " +
-            (rawText || "empty response"),
-        };
-      }
-      const fileNames = parseCsvTextContent(listResult).filter(
-        (n) => n && !/^error/i.test(n) && n !== "preamble",
-      ); // preamble is an init marker, not a user-facing topic
-      return { success: true, data: fileNames.map((title) => ({ title })) };
+      return { success: true, data: topicNames(listResult).map((title) => ({ title })) };
     } catch (error) {
+      const cached = await cachedSdkDocs();
+      if (cached) return {
+        success: true, data: cached.topics.map(({ title }) => ({ title })),
+        cached: true, version: cached.version,
+      };
       return { success: false, error: error.message };
     }
   });
@@ -1725,19 +1795,35 @@ app.whenReady().then(async () => {
         throw new Error(`Affinity could not load ${filename}.`);
       return { success: true, data: content };
     } catch (error) {
+      const cached = await cachedSdkDocs();
+      const topic = cached?.topics.find((item) => item.title === filename);
+      if (topic) return { success: true, data: topic.content, cached: true, version: cached.version };
       return { success: false, error: error.message };
     }
   });
 
   ipcMain.handle("search-docs", async (event, query) => {
     try {
-      const result = await callTool(client, "search_sdk_hints", {
-        prompt: query,
+      const { snapshot, cached } = await completeSdkDocsSnapshot();
+      return { success: true, data: {
+        results: searchSnapshot(snapshot, query), version: snapshot.version, cached,
+      } };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("export-docs", async () => {
+    try {
+      const { snapshot, cached } = await completeSdkDocsSnapshot();
+      const { canceled, filePath } = await dialog.showSaveDialog(win, {
+        title: "Export Affinity SDK documentation",
+        defaultPath: `Affinity-SDK-${snapshot.version}.md`,
+        filters: [{ name: "Markdown", extensions: ["md"] }],
       });
-      return {
-        success: true,
-        data: getTextContent(result) || JSON.stringify(result, null, 2),
-      };
+      if (canceled || !filePath) return { success: true, canceled: true };
+      await fs.writeFile(filePath, markdownForSnapshot(snapshot), "utf8");
+      return { success: true, data: { filePath, version: snapshot.version, cached } };
     } catch (error) {
       return { success: false, error: error.message };
     }

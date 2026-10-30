@@ -2727,8 +2727,19 @@ async function renderDocs(root) {
   screen.className = "screen";
   screen.innerHTML = `
     <div class="eyebrow">${escapeHtml(t("nav.support"))}</div>
-    <h1>${escapeHtml(t("nav.documentation"))}</h1>
-    <p class="subhead" id="docs-sub"><span class="loading">${escapeHtml(t("docs.subtitleLoading"))}</span></p>
+    <div class="docs-header">
+      <div>
+        <h1>${escapeHtml(t("nav.documentation"))}</h1>
+        <p class="subhead" id="docs-sub"><span class="loading">${escapeHtml(t("docs.subtitleLoading"))}</span></p>
+      </div>
+      <div class="docs-header-actions">
+        <button class="gh-btn compact" id="docs-export">${escapeHtml(t("docs.exportMarkdown"))}</button>
+        <div class="docs-export-progress" id="docs-export-progress" hidden>
+          <progress class="docs-progress" id="docs-progress" max="100" value="0"></progress>
+        </div>
+        <span id="docs-export-status" class="subhead"></span>
+      </div>
+    </div>
 
     <section class="api-monitor">
       <div class="api-monitor-head">
@@ -2756,6 +2767,36 @@ async function renderDocs(root) {
     .querySelector("#docs-search-ico")
     .appendChild(Ico("search", { size: 13 }));
 
+  const exportButton = screen.querySelector("#docs-export");
+  const exportStatus = screen.querySelector("#docs-export-status");
+  const progressBox = screen.querySelector("#docs-export-progress");
+  const progressBar = screen.querySelector("#docs-progress");
+  exportButton.onclick = async () => {
+    exportButton.disabled = true;
+    exportStatus.textContent = t("docs.exporting");
+    exportStatus.classList.add("loading-indicator");
+    progressBox.hidden = false;
+    progressBar.value = 0;
+    const stopProgress = window.api.onDocsProgress(({ done, total }) => {
+      if (!screen.isConnected) return;
+      progressBar.value = total ? Math.round(done / total * 100) : 0;
+      exportStatus.textContent = t("docs.exportProgress", { done, total });
+    });
+    try {
+      const result = await window.api.exportDocs();
+      exportStatus.textContent = !result?.success
+        ? result?.error || t("common.unknownError")
+        : result.canceled ? "" : t("docs.exported", { version: result.data.version });
+    } catch (error) {
+      exportStatus.textContent = error.message || t("common.unknownError");
+    } finally {
+      stopProgress();
+      progressBox.hidden = true;
+      exportStatus.classList.remove("loading-indicator");
+      exportButton.disabled = false;
+    }
+  };
+
   const monitorStatus = screen.querySelector("#api-monitor-status");
   const monitorChanges = screen.querySelector("#api-monitor-changes");
   const monitorScan = screen.querySelector("#api-monitor-scan");
@@ -2763,12 +2804,19 @@ async function renderDocs(root) {
   async function showApiMonitor(sync) {
     refreshMonitor.disabled = true;
     monitorStatus.textContent = t(sync ? "docs.checkingSdk" : "docs.loadingSnapshots");
-    let result = sync ? await window.api.syncApiMonitor() : await window.api.getApiMonitor();
+    monitorStatus.classList.add("loading-indicator");
+    let result;
+    try {
+      result = sync ? await window.api.syncApiMonitor() : await window.api.getApiMonitor();
+    } catch (error) {
+      result = { success: false, error: error.message };
+    }
     const syncError = sync && !result?.success ? result?.error || "Affinity is unavailable." : null;
     if (syncError) {
-      const cached = await window.api.getApiMonitor();
+      const cached = await window.api.getApiMonitor().catch(() => null);
       if (cached?.success && cached.data.currentVersion) result = cached;
     }
+    monitorStatus.classList.remove("loading-indicator");
     if (!screen.isConnected) return;
     refreshMonitor.disabled = false;
     monitorChanges.replaceChildren();
@@ -2816,8 +2864,12 @@ async function renderDocs(root) {
     scanButton.onclick = async () => {
       scanButton.disabled = true;
       scanResult.textContent = t("docs.scanningScripts");
-      const result = await window.api.scanApiCompatibility();
+      scanResult.classList.add("loading-indicator");
+      let result;
+      try { result = await window.api.scanApiCompatibility(); }
+      catch (error) { result = { success: false, error: error.message }; }
       if (!screen.isConnected) return;
+      scanResult.classList.remove("loading-indicator");
       scanButton.disabled = false;
       if (!result?.success) {
         scanResult.textContent = result?.error || "Could not scan scripts.";
@@ -2878,19 +2930,24 @@ async function renderDocs(root) {
     out.style.marginBottom = "28px";
     out.style.color = "var(--text-faint)";
     out.style.fontSize = "12px";
-    out.innerHTML =
-      '<div class="eyebrow accent"><span class="loading">searching</span></div>';
+    out.textContent = t("docs.searching");
+    out.classList.add("loading-indicator");
+    input.disabled = true;
 
     let r;
     try {
       r = await window.api.searchDocs(q);
     } catch (err) {
+      input.disabled = false;
+      out.classList.remove("loading-indicator");
       out.style.cssText =
         "display:block; margin-bottom: 28px; color: var(--danger-text); font-size: 12px; padding: 16px 20px; border: 1px solid var(--danger-border); background: var(--danger-bg); border-radius: var(--r-lg);";
       out.textContent =
         "IPC error: " + (err && err.message ? err.message : String(err));
       return;
     }
+    input.disabled = false;
+    out.classList.remove("loading-indicator");
     if (!r || !r.success) {
       out.style.cssText =
         "display:block; margin-bottom: 28px; color: var(--danger-text); font-size: 12px; padding: 16px 20px; border: 1px solid var(--danger-border); background: var(--danger-bg); border-radius: var(--r-lg);";
@@ -2899,11 +2956,11 @@ async function renderDocs(root) {
         "Search failed with no error message. The MCP bridge may be offline.";
       return;
     }
-    const text = (r.data || "").trim();
-    if (!text) {
+    const { results = [], version, cached } = r.data || {};
+    if (!results.length) {
       out.style.cssText =
         "display:block; margin-bottom: 28px; color: var(--text-faint); font-size: 12px; padding: 16px 20px; border: 1px solid var(--hair); background: var(--bg-card); border-radius: var(--r-lg);";
-      out.textContent = `No hints matched "${q}". The SDK hint pool is cross-session and populated by other tools, it may be empty for this query.`;
+      out.textContent = t("docs.noResults", { query: q });
       return;
     }
     out.className = "doc-reader";
@@ -2917,13 +2974,21 @@ async function renderDocs(root) {
       input.value = "";
       resetOut();
     };
-    const content = document.createElement("div");
-    content.innerHTML = window.marked
-      ? window.marked.parse(text)
-      : escapeHtml(text);
     out.innerHTML = "";
     out.appendChild(close);
-    out.appendChild(content);
+    if (cached) {
+      const note = document.createElement("p");
+      note.className = "subhead";
+      note.textContent = t("docs.cachedVersion", { version });
+      out.appendChild(note);
+    }
+    for (const match of results) {
+      const button = document.createElement("button");
+      button.className = "doc-search-hit";
+      button.innerHTML = `<strong>${escapeHtml(match.title)}:${match.line}</strong><span>${escapeHtml(match.snippet)}</span>`;
+      button.onclick = () => openDocReader({ title: match.title });
+      out.appendChild(button);
+    }
   });
 
   // --- Doc cards grid ---
@@ -2935,6 +3000,9 @@ async function renderDocs(root) {
       return;
     }
     docsCache = res.data || [];
+    if (res.cached) {
+      exportStatus.textContent = t("docs.cachedVersion", { version: res.version });
+    }
   }
   screen.querySelector("#docs-sub").textContent = t("docs.topicCount", { count: docsCache.length });
 
