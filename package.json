@@ -5,7 +5,17 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder"
+    "build": "electron-builder",
+    "build:win": "electron-builder --win --x64 --arm64",
+    "build:win:x64": "electron-builder --win --x64",
+    "build:win:arm64": "electron-builder --win --arm64",
+    "build:mac": "electron-builder --mac --x64 --arm64",
+    "build:mac:x64": "electron-builder --mac --x64",
+    "build:mac:arm64": "electron-builder --mac --arm64",
+    "build:linux": "electron-builder --linux --x64 --arm64",
+    "build:linux:x64": "electron-builder --linux --x64",
+    "build:linux:arm64": "electron-builder --linux --arm64",
+    "build:all": "electron-builder --mac --win --linux --x64 --arm64"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "latest",
@@ -50,6 +60,7 @@
     "linux": {
       "target": "AppImage",
       "icon": "assets/icon.png"
-    }
+    },
+    "artifactName": "Script.Manager.for.Affinity-${version}-${os}-${arch}.${ext}"
   }
 }
