@@ -1,14 +1,34 @@
 const Ico = window.Icons.createIcon;
+let localeMessages = Object.create(null);
+
+function t(key, params = {}) {
+  const message = localeMessages[key] || key;
+  return message.replace(/\{([a-zA-Z][a-zA-Z0-9]*)\}/g, (match, name) =>
+    Object.hasOwn(params, name) ? String(params[name]) : match);
+}
+
+async function loadLocale(language = "en") {
+  const result = await window.api.getLocale(language);
+  if (!result?.success) throw new Error(result?.error || "Could not load language dictionary.");
+  localeMessages = result.data;
+  document.documentElement.lang = language;
+  document.querySelectorAll("[data-i18n]").forEach((element) => {
+    element.textContent = t(element.dataset.i18n);
+  });
+}
+
 const state = {
   nav: "local",
   localTab: "local", // 'local' | 'affinity' — My Scripts sub-tabs
+  settingsFocus: null,
+  settingsCategory: "general",
   localQuery: "",
   communityQuery: "",
   communityFilter: "all",
   communitySort: "name",
+  communityLibraryFilter: "all",
   // Unified favorites, keyed by script stem — shared by My Scripts + Community.
   favorites: new Set(),
-  installedIds: new Set(),
   editorFile: null,
   editorDirty: false,
   editorOrigin: "local", // 'local' | 'develop' — where the editor's Back button should return to
@@ -65,29 +85,35 @@ function communityScriptMetadata(script) {
 
 const NAV_SECTIONS = [
   {
-    label: "Library",
-    items: [{ id: "local", name: "My Scripts", icon: "folder" }],
+    label: "nav.library",
+    items: [{ id: "local", name: "nav.myScripts", icon: "folder" }],
   },
   {
-    label: "Discover",
-    items: [{ id: "community", name: "Community", icon: "compass" }],
+    label: "nav.discover",
+    items: [{ id: "community", name: "nav.community", icon: "compass" }],
   },
   {
-    label: "Development",
-    items: [{ id: "develop", name: "Code Editor", icon: "code" }],
+    label: "nav.development",
+    items: [{ id: "develop", name: "nav.codeEditor", icon: "code" }],
   },
   {
-    label: "Support",
+    label: "nav.support",
     items: [
-      { id: "docs", name: "Documentation", icon: "book" },
+      { id: "affinity-status", name: "nav.affinityStatus", icon: "plug" },
+      { id: "docs", name: "nav.documentation", icon: "book" },
+      { id: "resources", name: "nav.resources", icon: "link" },
       {
         id: "issues",
-        name: "Issues",
+        name: "nav.issues",
         icon: "github",
         external:
           "https://github.com/JiriKrblich/Affinity-script-manager/issues",
       },
     ],
+  },
+  {
+    label: "nav.preferences",
+    items: [{ id: "app-settings", name: "nav.appSettings", icon: "gear" }],
   },
 ];
 
@@ -102,18 +128,18 @@ function renderNav() {
     sec.className = "nav-section";
     const hdr = document.createElement("div");
     hdr.className = "eyebrow nav-section-label";
-    hdr.textContent = s.label;
+    hdr.textContent = t(s.label);
     sec.appendChild(hdr);
     for (const it of s.items) {
       const btn = document.createElement("button");
       btn.className = "nav-item" + (effectiveNav === it.id ? " active" : "");
       btn.dataset.nav = it.id;
       // data-label drives the collapsed tooltip via CSS ::after
-      btn.setAttribute("data-label", it.name);
+      btn.setAttribute("data-label", t(it.name));
       btn.appendChild(Ico(it.icon, { size: 14 }));
       const lbl = document.createElement("span");
       lbl.className = "label";
-      lbl.textContent = it.name;
+      lbl.textContent = t(it.name);
       btn.appendChild(lbl);
       if (it.count != null) {
         const c = document.createElement("span");
@@ -167,6 +193,9 @@ async function renderScreen() {
     community: renderCommunity,
     develop: renderDevelop,
     docs: renderDocs,
+    "affinity-status": renderAffinityStatus,
+    resources: renderResources,
+    "app-settings": renderAppSettings,
     editor: renderEditor,
   };
   const fn = dispatch[state.nav] || renderLocal;
@@ -238,11 +267,19 @@ async function wireBrand() {
   }
 }
 
-window.addEventListener("DOMContentLoaded", () => {
+window.addEventListener("DOMContentLoaded", async () => {
   if (navigator.platform && navigator.platform.toLowerCase().includes("mac")) {
     document.body.classList.add("platform-darwin");
   }
-  document.getElementById("brand-version").textContent = "for Affinity";
+  try {
+    const configured = await window.api.getAppLanguage();
+    await loadLocale(configured?.success ? configured.data : "en");
+  } catch (error) {
+    console.error("Could not load language dictionary:", error);
+    try { await loadLocale("en"); }
+    catch (fallbackError) { console.error("Could not load English dictionary:", fallbackError); }
+  }
+  document.getElementById("brand-version").textContent = t("app.affinity");
   wireBrand();
   wireDropZone();
 
@@ -262,10 +299,9 @@ window.addEventListener("DOMContentLoaded", () => {
   if (window.api.onLocalScriptsChanged) {
     window.api.onLocalScriptsChanged(() => {
       if (state.nav === "local") renderScreen();
-      window.api
-        .listLocalScripts()
-        .then((res) => {
-          if (res && res.success) updateNavCount("local", res.data.length);
+      Promise.all([window.api.listLocalScripts(), window.api.listWatchedScripts()])
+        .then(([local, watched]) => {
+          if (local?.success) updateNavCount("local", local.data.length + (watched?.data?.length || 0));
         })
         .catch(() => {});
     });
@@ -387,23 +423,23 @@ function openDropChoiceModal(items) {
   const bd = document.createElement("div");
   bd.className = "modal-backdrop";
   const count = items.length;
-  const heading = count === 1 ? "Add script" : `Add ${count} scripts`;
+  const heading = count === 1 ? t("drop.addOne") : t("drop.addMany", { count });
   const summary =
     count === 1
-      ? `<strong>${escapeHtml(items[0].name)}</strong> is ready to add.`
-      : `<strong>${count}</strong> scripts are ready to add.`;
+      ? t("drop.readyOne", { name: items[0].name })
+      : t("drop.readyMany", { count });
   bd.innerHTML = `
     <div class="modal">
       <div class="modal-head">
-        <h3>${heading}</h3>
+        <h3>${escapeHtml(heading)}</h3>
         <button class="icon-btn" id="m-close"></button>
       </div>
       <div class="modal-body">
-        <p>${summary} What would you like to do?</p>
+        <p>${escapeHtml(summary)} ${escapeHtml(t("drop.choice"))}</p>
       </div>
       <div class="modal-foot">
-        <button class="gh-btn" id="m-save-only">Just save to My Scripts</button>
-        <button class="accent-btn" id="m-save-install">Save &amp; install</button>
+        <button class="gh-btn" id="m-save-only">${escapeHtml(t("drop.saveOnly"))}</button>
+        <button class="accent-btn" id="m-save-install">${escapeHtml(t("drop.saveInstall"))}</button>
       </div>
     </div>`;
   bd.querySelector("#m-close").appendChild(Ico("close", { size: 12 }));
@@ -416,7 +452,7 @@ function openDropChoiceModal(items) {
   });
 
   async function process(install, btn) {
-    btn.innerHTML = `<span class="loading">${install ? "Installing" : "Saving"}</span>`;
+    btn.innerHTML = `<span class="loading">${escapeHtml(t(install ? "action.installing" : "action.saving"))}</span>`;
     bd.querySelectorAll("button").forEach((b) => (b.disabled = true));
     let saved = 0;
     let pushFailed = false;
@@ -506,34 +542,34 @@ function openShareModal(opts = {}) {
   const isGeneric = !opts.filename && !opts.mcpTitle;
   const steps = isGeneric
     ? [
-        "Click <strong>Open GitHub issue</strong> — the contribution template opens.",
-        "Sign in to GitHub (a free account is enough). The app never sees your credentials.",
-        "Fill in the details and drag in a 16:9 preview image if you have one.",
-        "Hit <strong>Submit</strong>. A maintainer reviews it and adds it to the registry.",
-        "Once merged, it shows up in the Community tab for everyone.",
+        t("share.genericStart"),
+        t("share.signIn"),
+        t("share.genericDetails"),
+        t("share.genericSubmit"),
+        t("share.genericFinish"),
       ]
     : [
-        "Click <strong>Open GitHub issue</strong> — your script is copied and a blank issue opens.",
-        "Sign in to GitHub (a free account is enough). The app never sees your credentials.",
-        "Paste with <kbd>Cmd/Ctrl+V</kbd> — the whole submission fills in.",
-        "Drag in a 16:9 preview image if you have one, then hit <strong>Submit</strong>.",
-        "A maintainer reviews it and adds it to the registry; once merged it appears in Community.",
+        t("share.scriptStart"),
+        t("share.signIn"),
+        t("share.scriptPaste"),
+        t("share.scriptPreview"),
+        t("share.scriptFinish"),
       ];
   const bd = document.createElement("div");
   bd.className = "modal-backdrop";
   bd.innerHTML = `
     <div class="modal">
       <div class="modal-head">
-        <h3>Share to the community</h3>
+        <h3>${escapeHtml(t("share.heading"))}</h3>
         <button class="icon-btn" id="m-close"></button>
       </div>
       <div class="modal-body">
-        <p>This publishes your script to the community repository so it can appear in everyone's Community tab. Here's how it works:</p>
-        <ol class="share-steps">${steps.map((s) => `<li>${s}</li>`).join("")}</ol>
+        <p>${escapeHtml(t("share.description"))}</p>
+        <ol class="share-steps">${steps.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ol>
       </div>
       <div class="modal-foot">
-        <button class="gh-btn" id="m-cancel">Cancel</button>
-        <button class="accent-btn" id="m-open"><span id="ico-gh"></span> Open GitHub issue</button>
+        <button class="gh-btn" id="m-cancel">${escapeHtml(t("action.cancel"))}</button>
+        <button class="accent-btn" id="m-open"><span id="ico-gh"></span> ${escapeHtml(t("share.openIssue"))}</button>
       </div>
     </div>`;
   bd.querySelector("#m-close").appendChild(Ico("close", { size: 12 }));
@@ -573,9 +609,9 @@ function openShareModal(opts = {}) {
     bd.querySelector(".modal-body").innerHTML = `
       <div class="share-done">
         <span class="share-done-ico">✓</span>
-        <p><strong>Copied to clipboard.</strong> In the GitHub tab that just opened, paste with <kbd>Cmd/Ctrl+V</kbd> and hit <strong>Submit</strong>.</p>
+        <p>${escapeHtml(t("share.copied"))}</p>
       </div>`;
-    bd.querySelector(".modal-foot").innerHTML = `<button class="accent-btn" id="m-done">Done</button>`;
+    bd.querySelector(".modal-foot").innerHTML = `<button class="accent-btn" id="m-done">${escapeHtml(t("action.done"))}</button>`;
     bd.querySelector("#m-done").onclick = close;
   };
 }
@@ -608,17 +644,17 @@ function openUpdateModal(opts) {
         <img class="update-illustration" src="assets/updatescript.png" alt="In Affinity, right-click the script in the Scripts panel and delete it, then reinstall">
         ${opts.versionLine ? `<div class="update-ver-line">${opts.versionLine}</div>` : ""}
         <div class="update-note">
-          <div class="update-note-title">Affinity can't overwrite or delete an installed script</div>
+          <div class="update-note-title">${escapeHtml(t("update.noteTitle"))}</div>
           <p>${
             opts.isActive
-              ? "This script is currently installed in Affinity, so the update can't replace it automatically. Delete the current version in Affinity first — right-click it in the Scripts panel and delete it — then install the new version below."
-              : "If this script is installed in Affinity, delete it there first — right-click it in the Scripts panel and delete it — then install the new version below. Otherwise you'll end up with a duplicate."
+              ? escapeHtml(t("update.activeNote"))
+              : escapeHtml(t("update.otherNote"))
           }</p>
         </div>
       </div>
       <div class="modal-foot">
-        <button class="gh-btn" id="m-local" title="Download the new version into My Scripts without touching Affinity">Save update only</button>
-        <button class="accent-btn" id="m-install" title="Download the new version and install it into Affinity">Update &amp; install</button>
+        <button class="gh-btn" id="m-local">${escapeHtml(t("update.saveOnly"))}</button>
+        <button class="accent-btn" id="m-install">${escapeHtml(t("update.install"))}</button>
       </div>
     </div>`;
   bd.querySelector("#m-close").appendChild(Ico("close", { size: 12 }));
@@ -636,7 +672,7 @@ function openUpdateModal(opts) {
   const installLabel = installBtn.innerHTML;
 
   async function go(install, btn) {
-    btn.innerHTML = `<span class="loading">${install ? "Installing" : "Updating"}</span>`;
+    btn.innerHTML = `<span class="loading">${escapeHtml(t(install ? "action.installing" : "action.updating"))}</span>`;
     localBtn.disabled = true;
     installBtn.disabled = true;
     const ok = await opts.run(install);
@@ -670,9 +706,9 @@ function renderUpdatesPanel(container, pending) {
     <div class="updates-head">
       <div class="updates-title">
         <span class="updates-badge">${pending.length}</span>
-        <span>${pending.length === 1 ? "Update available" : "Updates available"}</span>
+        <span>${escapeHtml(t(pending.length === 1 ? "local.updateAvailable" : "community.updatesAvailable"))}</span>
       </div>
-      <button class="accent-btn compact" id="upd-all">Update all</button>
+      <button class="accent-btn compact" id="upd-all">${escapeHtml(t("local.updateAll"))}</button>
     </div>
     <div class="updates-list"></div>
   `;
@@ -688,7 +724,7 @@ function renderUpdatesPanel(container, pending) {
         <span class="updates-ver-arrow">→</span>
         <span class="updates-ver-new">v${escapeHtml(update.version)}</span>
       </div>
-      <button class="gh-btn compact updates-btn">Update</button>
+      <button class="gh-btn compact updates-btn">${escapeHtml(t("community.update"))}</button>
     `;
     row.querySelector(".updates-btn").onclick = () =>
       openUpdateModal({
@@ -739,18 +775,18 @@ function openRunModal(opts = {}) {
   bd.innerHTML = `
     <div class="modal run-modal">
       <div class="modal-head">
-        <h3>Run without install${opts.name ? ` — ${escapeHtml(opts.name)}` : ""}</h3>
+        <h3>${escapeHtml(t("community.runWithoutInstall"))}${opts.name ? ` — ${escapeHtml(opts.name)}` : ""}</h3>
         <button class="icon-btn" id="m-close"></button>
       </div>
       <div class="modal-body">
-        <p class="run-note">Runs this script in Affinity now, without adding it to your library.</p>
+        <p class="run-note">${escapeHtml(t("run.note"))}</p>
         <div class="run-preview" id="run-preview" hidden></div>
-        <div class="run-console-label">Console output</div>
+        <div class="run-console-label">${escapeHtml(t("run.consoleOutput"))}</div>
         <pre class="run-console" id="run-console"></pre>
       </div>
       <div class="modal-foot">
-        <button class="gh-btn" id="m-rerun">Run again</button>
-        <button class="accent-btn" id="m-done">Done</button>
+        <button class="gh-btn" id="m-rerun">${escapeHtml(t("run.again"))}</button>
+        <button class="accent-btn" id="m-done">${escapeHtml(t("action.done"))}</button>
       </div>
     </div>`;
   bd.querySelector("#m-close").appendChild(Ico("close", { size: 12 }));
@@ -801,19 +837,367 @@ function openRunModal(opts = {}) {
   run();
 }
 
+const DEFAULT_COMMUNITY_REPO =
+  "https://raw.githubusercontent.com/JiriKrblich/Affinity-Community-Scripts/refs/heads/main/registry.json";
+
+// ---------- App Settings ----------
+async function renderAppSettings(root) {
+  const screen = document.createElement("div");
+  screen.className = "screen app-settings-screen";
+  screen.innerHTML = `
+    <div class="eyebrow">${escapeHtml(t("nav.preferences"))}</div>
+    <h1>${escapeHtml(t("nav.appSettings"))}</h1>
+    <p class="subhead">${escapeHtml(t("settings.subtitle"))}</p>
+    <nav class="settings-categories" aria-label="${escapeHtml(t("settings.categoriesLabel"))}">
+      <button type="button" data-settings-category="general">${escapeHtml(t("settings.general"))}</button>
+      <button type="button" data-settings-category="folders">${escapeHtml(t("settings.folders"))}</button>
+      <button type="button" data-settings-category="editor">${escapeHtml(t("settings.editor"))}</button>
+      <button type="button" data-settings-category="repositories">${escapeHtml(t("settings.repositories"))}</button>
+    </nav>
+    <section class="settings-card" data-settings-panel="general">
+      <h2>${escapeHtml(t("settings.language"))}</h2>
+      <p>${escapeHtml(t("settings.languageDescription"))}</p>
+      <div class="settings-editor-controls">
+        <label>${escapeHtml(t("settings.language"))}
+          <select id="settings-language" disabled>
+            <option value="en">English</option>
+            <option value="cs">Čeština</option>
+            <option value="ja">日本語</option>
+            <option value="zh-CN">简体中文</option>
+            <option value="ko">한국어</option>
+            <option value="de">Deutsch</option>
+            <option value="fr">Français</option>
+            <option value="es">Español</option>
+          </select>
+        </label>
+      </div>
+      <p class="settings-error" id="settings-language-error" hidden></p>
+    </section>
+    <section class="settings-card" data-settings-panel="editor">
+      <h2>${escapeHtml(t("settings.editor"))}</h2>
+      <p>${escapeHtml(t("settings.editorDescription"))}</p>
+      <div class="settings-editor-controls">
+        <label>${escapeHtml(t("settings.indentWith"))}
+          <select id="settings-indent-style" disabled>
+            <option value="spaces">${escapeHtml(t("settings.spaces"))}</option>
+            <option value="tabs">${escapeHtml(t("settings.tabs"))}</option>
+          </select>
+        </label>
+        <label>${escapeHtml(t("settings.tabWidth"))}
+          <select id="settings-tab-size" disabled>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
+          </select>
+        </label>
+      </div>
+      <p class="settings-error" id="settings-editor-error" hidden></p>
+    </section>
+    <section class="settings-card" data-settings-panel="folders">
+      <h2>${escapeHtml(t("settings.mainFolder"))}</h2>
+      <p>${escapeHtml(t("settings.mainFolderDescription"))}</p>
+      <div class="settings-path" id="settings-main-path">${escapeHtml(t("common.loading"))}</div>
+      <div class="settings-actions">
+        <button class="gh-btn" id="settings-open-main">${escapeHtml(t("settings.openFolder"))}</button>
+        <button class="gh-btn" id="settings-change-main">${escapeHtml(t("settings.changeFolder"))}</button>
+        <button class="gh-btn" id="settings-reset-main">${escapeHtml(t("settings.useDefault"))}</button>
+      </div>
+    </section>
+    <section class="settings-card" data-settings-panel="folders">
+      <h2>${escapeHtml(t("settings.watchedFolders"))}</h2>
+      <p>${escapeHtml(t("settings.watchedDescription"))}</p>
+      <div id="settings-watched-list"></div>
+      <button class="gh-btn" id="settings-add-watched">${escapeHtml(t("settings.addWatchedFolder"))}</button>
+    </section>
+    <section class="settings-card" id="settings-repositories" data-settings-panel="repositories">
+      <h2>${escapeHtml(t("settings.repositories"))}</h2>
+      <p>${escapeHtml(t("settings.repositoriesDescription"))}</p>
+      <div class="add-repo">
+        <input id="settings-repo-input" type="text" placeholder="https://github.com/user/repository" aria-label="${escapeHtml(t("settings.repoUrl"))}">
+        <button class="accent-btn compact" id="settings-add-repo">${escapeHtml(t("action.add"))}</button>
+      </div>
+      <div id="settings-repo-list" class="settings-repo-list"></div>
+    </section>`;
+  root.appendChild(screen);
+  const categoryButtons = [...screen.querySelectorAll("[data-settings-category]")];
+  const categoryPanels = [...screen.querySelectorAll("[data-settings-panel]")];
+  const showCategory = (category) => {
+    state.settingsCategory = category;
+    categoryButtons.forEach((button) => {
+      const selected = button.dataset.settingsCategory === category;
+      button.classList.toggle("active", selected);
+      button.setAttribute("aria-current", selected ? "page" : "false");
+    });
+    categoryPanels.forEach((panel) => {
+      panel.hidden = panel.dataset.settingsPanel !== category;
+    });
+  };
+  categoryButtons.forEach((button) => {
+    button.onclick = () => showCategory(button.dataset.settingsCategory);
+  });
+  showCategory(state.settingsFocus || state.settingsCategory);
+  state.settingsFocus = null;
+  const languageSelect = screen.querySelector("#settings-language");
+  const languageError = screen.querySelector("#settings-language-error");
+  const currentLanguage = await window.api.getAppLanguage();
+  if (currentLanguage?.success) {
+    languageSelect.value = currentLanguage.data;
+    languageSelect.disabled = false;
+  } else {
+    languageError.textContent = currentLanguage?.error || t("settings.languageLoadError");
+    languageError.hidden = false;
+  }
+  languageSelect.onchange = async () => {
+    languageSelect.disabled = true;
+    let result;
+    try { result = await window.api.setAppLanguage(languageSelect.value); }
+    catch (error) { result = { success: false, error: error.message }; }
+    if (result?.success) {
+      window.location.reload();
+    } else {
+      languageSelect.value = currentLanguage.data;
+      languageError.textContent = result?.error || t("settings.languageSaveError");
+      languageError.hidden = false;
+      languageSelect.disabled = false;
+    }
+  };
+  const indentStyleSelect = screen.querySelector("#settings-indent-style");
+  const tabSizeSelect = screen.querySelector("#settings-tab-size");
+  const editorSettingsError = screen.querySelector("#settings-editor-error");
+  let savedEditorSettings;
+  const editorSettingsResult = await window.api.getEditorSettings();
+  if (editorSettingsResult?.success) {
+    savedEditorSettings = editorSettingsResult.data;
+    indentStyleSelect.value = savedEditorSettings.indentStyle;
+    tabSizeSelect.value = String(savedEditorSettings.tabSize);
+    indentStyleSelect.disabled = false;
+    tabSizeSelect.disabled = false;
+  } else {
+    editorSettingsError.textContent = editorSettingsResult?.error || "Could not load editor settings.";
+    editorSettingsError.hidden = false;
+  }
+  const saveEditorSettings = async () => {
+    indentStyleSelect.disabled = true;
+    tabSizeSelect.disabled = true;
+    const result = await window.api.setEditorSettings({
+      indentStyle: indentStyleSelect.value,
+      tabSize: Number(tabSizeSelect.value),
+    });
+    if (result?.success) {
+      savedEditorSettings = result.data;
+      editorSettingsError.hidden = true;
+    } else {
+      indentStyleSelect.value = savedEditorSettings.indentStyle;
+      tabSizeSelect.value = String(savedEditorSettings.tabSize);
+      editorSettingsError.textContent = result?.error || "Could not save editor settings.";
+      editorSettingsError.hidden = false;
+    }
+    indentStyleSelect.disabled = false;
+    tabSizeSelect.disabled = false;
+  };
+  indentStyleSelect.onchange = saveEditorSettings;
+  tabSizeSelect.onchange = saveEditorSettings;
+  const repoInput = screen.querySelector("#settings-repo-input");
+  const repoAdd = screen.querySelector("#settings-add-repo");
+  const repoList = screen.querySelector("#settings-repo-list");
+  const displayRepo = (url) => {
+    const match = url.match(/raw\.githubusercontent\.com\/([^/]+\/[^/]+)/);
+    return match ? match[1] : url;
+  };
+  async function refreshRepos() {
+    const result = await window.api.getRepos();
+    if (!screen.isConnected) return;
+    repoList.replaceChildren();
+    if (!result?.success) {
+      repoList.textContent = result?.error || "Could not load repositories.";
+      return;
+    }
+    for (const url of result.data) {
+      const row = document.createElement("div");
+      row.className = "repo-row";
+      const name = document.createElement("div");
+      name.className = "name";
+      name.textContent = displayRepo(url);
+      row.appendChild(name);
+      if (url === DEFAULT_COMMUNITY_REPO) {
+        const kind = document.createElement("span");
+        kind.className = "kind";
+        kind.textContent = t("settings.defaultRepo");
+        row.appendChild(kind);
+      } else {
+        const remove = document.createElement("button");
+        remove.className = "gh-btn compact danger";
+        remove.textContent = t("action.remove");
+        remove.onclick = async () => {
+          if (!confirm(`Remove ${displayRepo(url)}?`)) return;
+          remove.disabled = true;
+          const result = await window.api.removeRepo(url);
+          if (!result?.success) {
+            remove.disabled = false;
+            alert(result?.error || "Could not remove repository.");
+            return;
+          }
+          refreshRepos();
+        };
+        row.appendChild(remove);
+      }
+      repoList.appendChild(row);
+    }
+  }
+  async function addRepo() {
+    const url = repoInput.value.trim();
+    if (!url) return;
+    repoAdd.disabled = true;
+    repoAdd.textContent = t("settings.adding");
+    const result = await window.api.addRepo(url);
+    repoAdd.disabled = false;
+    repoAdd.textContent = t("action.add");
+    if (!result?.success) return alert(result?.error || "Could not add repository.");
+    repoInput.value = "";
+    refreshRepos();
+  }
+  repoAdd.onclick = addRepo;
+  repoInput.onkeydown = (event) => { if (event.key === "Enter") addRepo(); };
+  refreshRepos();
+
+  async function refresh() {
+    const result = await window.api.getScriptFolders();
+    if (!result?.success || !screen.isConnected) return;
+    const { primary, default: defaultPath, watched } = result.data;
+    screen.querySelector("#settings-main-path").textContent = primary;
+    screen.querySelector("#settings-reset-main").disabled = primary === defaultPath;
+    const list = screen.querySelector("#settings-watched-list");
+    list.innerHTML = "";
+    if (!watched.length) {
+      list.innerHTML = `<p class="settings-empty">${escapeHtml(t("settings.noWatchedFolders"))}</p>`;
+    }
+    for (const folder of watched) {
+      const row = document.createElement("div");
+      row.className = "settings-folder-row";
+      const label = document.createElement("span");
+      label.textContent = folder;
+      const open = document.createElement("button");
+      open.className = "gh-btn compact";
+      open.textContent = t("action.open");
+      open.onclick = async () => {
+        const r = await window.api.openScriptFolder(folder);
+        if (!r?.success) alert(r?.error || "Could not open folder.");
+      };
+      const remove = document.createElement("button");
+      remove.className = "gh-btn compact";
+      remove.textContent = t("action.remove");
+      remove.onclick = async () => {
+        const r = await window.api.removeWatchedFolder(folder);
+        if (!r?.success) alert(r?.error || "Could not remove folder.");
+        else refresh();
+      };
+      row.append(label, open, remove);
+      list.appendChild(row);
+    }
+    screen.querySelector("#settings-open-main").onclick = async () => {
+      const r = await window.api.openScriptFolder();
+      if (!r?.success) alert(r?.error || "Could not open folder.");
+    };
+    screen.querySelector("#settings-change-main").onclick = async () => {
+      const chosen = await window.api.chooseScriptFolder();
+      if (!chosen?.success) return;
+      const plan = await window.api.planScriptFolderChange(chosen.path);
+      if (!plan?.success) return alert(plan?.error || "Could not inspect folder.");
+      if (!plan.data.same) openFolderChangeModal(plan.data, refresh);
+    };
+    screen.querySelector("#settings-reset-main").onclick = async () => {
+      const plan = await window.api.planScriptFolderChange(defaultPath);
+      if (!plan?.success) return alert(plan?.error || "Could not inspect default folder.");
+      if (!plan.data.same) openFolderChangeModal(plan.data, refresh);
+    };
+    screen.querySelector("#settings-add-watched").onclick = async () => {
+      const chosen = await window.api.chooseScriptFolder();
+      if (!chosen?.success) return;
+      const r = await window.api.addWatchedFolder(chosen.path);
+      if (!r?.success) alert(r?.error || "Could not add folder.");
+      else refresh();
+    };
+  }
+  refresh();
+}
+
+function openFolderChangeModal(plan, onDone) {
+  const bd = document.createElement("div");
+  bd.className = "modal-backdrop";
+  bd.innerHTML = `
+    <div class="modal folder-change-modal">
+      <div class="modal-head"><h3>${escapeHtml(t("folder.changeHeading"))}</h3><button class="icon-btn" id="m-close"></button></div>
+      <div class="modal-body">
+        <p class="settings-path">${escapeHtml(plan.target)}</p>
+        <p>${escapeHtml(t("folder.counts", { source: plan.sourceCount, target: plan.targetCount }))}</p>
+        ${plan.sourceError ? `<p class="settings-error">${escapeHtml(t("folder.sourceUnavailable", { error: plan.sourceError }))}</p>` : ""}
+        <label class="folder-choice"><input type="radio" name="folder-action" value="move" ${plan.sourceError ? "disabled" : "checked"}> ${escapeHtml(t("folder.move"))}</label>
+        <label class="folder-choice"><input type="radio" name="folder-action" value="keep" ${plan.sourceError ? "checked" : ""}> ${escapeHtml(t("folder.keep"))}</label>
+        <p>${escapeHtml(t("folder.keepNote"))}</p>
+        <div id="folder-conflicts" ${plan.conflicts.length ? "" : "hidden"}>
+          <h4>${escapeHtml(t("folder.conflicts"))}</h4>
+          <p>${escapeHtml(t("folder.conflictHelp"))}</p>
+          ${plan.conflicts.map((name, i) => `<div class="folder-conflict-row"><span>${escapeHtml(name)}</span><select data-index="${i}">
+            <option value="keep">${escapeHtml(t("folder.keepExisting"))}</option>
+            <option value="rename">${escapeHtml(t("folder.keepBoth"))}</option>
+            <option value="replace">${escapeHtml(t("folder.replace"))}</option>
+          </select></div>`).join("")}
+        </div>
+      </div>
+      <div class="modal-foot"><button class="gh-btn" id="m-cancel">${escapeHtml(t("action.cancel"))}</button><button class="accent-btn" id="m-apply">${escapeHtml(t("settings.changeFolder"))}</button></div>
+    </div>`;
+  document.body.appendChild(bd);
+  const close = () => bd.remove();
+  bd.querySelector("#m-close").appendChild(Ico("close", { size: 12 }));
+  bd.querySelector("#m-close").onclick = close;
+  bd.querySelector("#m-cancel").onclick = close;
+  bd.addEventListener("click", (e) => { if (e.target === bd) close(); });
+  const conflicts = bd.querySelector("#folder-conflicts");
+  bd.querySelectorAll('[name="folder-action"]').forEach((radio) => {
+    radio.onchange = () => { conflicts.hidden = radio.value === "keep" && radio.checked; };
+  });
+  bd.querySelector("#m-apply").onclick = async (e) => {
+    const button = e.currentTarget;
+    button.disabled = true;
+    button.textContent = t("folder.changing");
+    const move = bd.querySelector('[name="folder-action"]:checked').value === "move";
+    const choices = {};
+    bd.querySelectorAll("[data-index]").forEach((select) => {
+      choices[plan.conflicts[Number(select.dataset.index)]] = select.value;
+    });
+    const result = await window.api.applyScriptFolderChange(plan.target, move, choices);
+    if (!result?.success) {
+      button.disabled = false;
+      button.textContent = t("settings.changeFolder");
+      alert(result?.error || "Could not change scripts folder.");
+      return;
+    }
+    close();
+    onDone();
+    if (result.data.leftBehind.length) alert(`${result.data.leftBehind.length} script(s) remain in the old folder, which is now watched.`);
+  };
+}
+
 // ---------- My Scripts screen ----------
+
 async function renderLocal(root) {
   const screen = document.createElement("div");
   screen.className = "screen";
   screen.innerHTML = `
-    <div class="eyebrow">Library</div>
-    <h1>My Scripts</h1>
-    <p class="subhead" id="local-subhead">Loading…</p>
-    <div class="local-statusline" id="local-status"></div>
+    <div class="eyebrow">${escapeHtml(t("nav.library"))}</div>
+    <div class="screen-header"><h1>${escapeHtml(t("nav.myScripts"))}</h1><button class="gh-btn compact" id="local-open-folder">${escapeHtml(t("settings.openFolder"))}</button></div>
+    <p class="subhead" id="local-subhead">${escapeHtml(t("common.loading"))}</p>
+    <div id="local-status"></div>
+    <div id="local-errors"></div>
     <div class="search-bar" style="margin-bottom:16px;">
       <div class="search-wrap">
         <span id="local-search-ico"></span>
-        <input id="local-search" type="text" placeholder="Search your scripts by name or description…" />
+        <input id="local-search" type="text" placeholder="${escapeHtml(t("local.searchPlaceholder"))}" />
       </div>
     </div>
     <div class="cat-tabs" id="local-tabs"></div>
@@ -821,6 +1205,10 @@ async function renderLocal(root) {
     <div id="local-content"></div>
   `;
   root.appendChild(screen);
+  screen.querySelector("#local-open-folder").onclick = async () => {
+    const result = await window.api.openScriptFolder();
+    if (!result?.success) alert(result?.error || "Could not open scripts folder.");
+  };
 
   // Skeleton rows while data loads (replaced once the tab content is built).
   screen.querySelector("#local-content").innerHTML =
@@ -828,19 +1216,20 @@ async function renderLocal(root) {
 
   // Fetch local + bridge + community in parallel — bridge drives Active/Paused state,
   // community drives Update-available indication.
-  const [localRes, bridgeRes, commRes] = await Promise.all([
+  const [localRes, bridgeRes, commRes, watchedRes] = await Promise.all([
     window.api.listLocalScripts(),
     window.api.listMcpScripts().catch(() => ({ success: false })),
     window.api.listCommunityScripts().catch(() => ({ success: false })),
+    window.api.listWatchedScripts().catch(() => ({ success: false, data: [], errors: [] })),
   ]);
   if (!localRes.success) {
-    screen.querySelector("#local-table").textContent =
-      "Error: " + localRes.error;
-    return;
+    screen.querySelector("#local-errors").innerHTML =
+      `<p class="settings-error">Main scripts folder unavailable: ${escapeHtml(localRes.error || "Unknown error")}. Change it in App Settings.</p>`;
   }
-  const items = localRes.data;
+  const items = localRes.success ? localRes.data : [];
+  const watchedItems = watchedRes?.data || [];
   const totalBytes = items.reduce((a, b) => a + b.size, 0);
-  updateNavCount("local", items.length);
+  updateNavCount("local", items.length + watchedItems.length);
 
   const favRes = await window.api
     .getFavorites()
@@ -868,7 +1257,6 @@ async function renderLocal(root) {
     const name = (it.name || "").toLowerCase();
     return bridgeTitles.has(stem) || bridgeTitles.has(name);
   };
-  const activeCount = bridgeOnline ? items.filter(isActive).length : 0;
 
   // Community lookup — stem-key → {version, download_url, name}.
   const communityMap = new Map();
@@ -887,16 +1275,15 @@ async function renderLocal(root) {
     return cmpVer(it.version, community.version) < 0 ? community : null;
   };
 
-  screen.querySelector("#local-subhead").innerHTML =
-    `${items.length} scripts · ${fmtBytes(totalBytes)} total`;
-  screen.querySelector("#local-status").innerHTML = `
-    <span class="status-dot ${bridgeOnline ? "on" : ""}"></span>
-    <span>${bridgeOnline ? `Affinity connected · ${activeCount} active` : "Affinity not connected"}</span>
-    <span class="sl-sep">·</span>
-    <span>watch mode on</span>
-    <button class="sl-more" id="btn-bridge-info">More info</button>
-  `;
-  screen.querySelector("#btn-bridge-info").onclick = openBridgeModal;
+  screen.querySelector("#local-subhead").textContent = t("local.summary", {
+    count: items.length, size: fmtBytes(totalBytes),
+  });
+  const statusEl = screen.querySelector("#local-status");
+  if (bridgeOnline) statusEl.remove();
+  else {
+    statusEl.className = "settings-error";
+    statusEl.textContent = t("affinityStatus.offlineMyScripts");
+  }
 
   // Grouped "updates available" panel — data only; painted per active tab.
   const pendingUpdates = items
@@ -910,6 +1297,10 @@ async function renderLocal(root) {
       : [];
   const localStems = new Set();
   for (const it of items) {
+    localStems.add(it.file.replace(/\.js$/i, "").toLowerCase());
+    localStems.add((it.name || "").toLowerCase());
+  }
+  for (const it of watchedItems) {
     localStems.add(it.file.replace(/\.js$/i, "").toLowerCase());
     localStems.add((it.name || "").toLowerCase());
   }
@@ -941,17 +1332,21 @@ async function renderLocal(root) {
   const tabsEl = screen.querySelector("#local-tabs");
   const contentEl = screen.querySelector("#local-content");
   const updatesEl = screen.querySelector("#local-updates");
+  const matchesLocalQuery = (it, query) =>
+    !query || [it.name, it.description, it.file].some((value) =>
+      String(value || "").toLowerCase().includes(query));
 
   function renderLocalTabs() {
     const defs = [
-      { id: "local", label: "Local", count: items.length },
-      { id: "affinity", label: "Just in Affinity", count: orphans.length },
+      { id: "local", label: t("local.tabLocal"), count: items.length },
+      { id: "watched", label: t("local.tabWatched"), count: watchedItems.length },
+      { id: "affinity", label: t("local.tabAffinity"), count: orphans.length },
     ];
     tabsEl.innerHTML = "";
     for (const d of defs) {
       const btn = document.createElement("button");
       btn.className = "cat-tab" + (state.localTab === d.id ? " active" : "");
-      btn.innerHTML = `<span>${d.label}</span><span class="count">${d.count}</span>`;
+      btn.innerHTML = `<span>${escapeHtml(d.label)}</span><span class="count">${d.count}</span>`;
       btn.onclick = () => {
         state.localTab = d.id;
         renderLocalTabs();
@@ -963,13 +1358,82 @@ async function renderLocal(root) {
 
   function paintLocalTab() {
     // The updates panel is about local scripts, so only on the My Scripts tab.
+    const query = state.localQuery.trim().toLowerCase();
     renderUpdatesPanel(
       updatesEl,
-      state.localTab === "local" ? pendingUpdates : [],
+      state.localTab === "local"
+        ? pendingUpdates.filter(({ it }) => matchesLocalQuery(it, query))
+        : [],
     );
     contentEl.innerHTML = "";
     if (state.localTab === "affinity") buildAffinityOnly(contentEl);
+    else if (state.localTab === "watched") buildWatchedTable(contentEl);
     else buildLocalTable(contentEl);
+  }
+
+  function buildWatchedTable(container) {
+    const errors = watchedRes?.errors || [];
+    for (const issue of errors) {
+      const warning = document.createElement("p");
+      warning.className = "settings-error";
+      warning.textContent = `Cannot read ${issue.folder}: ${issue.error}`;
+      container.appendChild(warning);
+    }
+    const q = state.localQuery.trim().toLowerCase();
+    const list = watchedItems.filter((it) =>
+      !q || [it.name, it.file, it.folder, it.description].some((s) => String(s || "").toLowerCase().includes(q)));
+    const table = document.createElement("div");
+    table.className = "table watched-table";
+    table.innerHTML = `<div class="table-row header"><div class="col">${escapeHtml(t("local.status"))}</div><div class="col">${escapeHtml(t("local.name"))}</div><div class="col">${escapeHtml(t("local.modified"))}</div><div class="col">${escapeHtml(t("local.size"))}</div><div class="col">${escapeHtml(t("local.folder"))}</div></div>`;
+    if (!list.length) {
+      const row = document.createElement("div");
+      row.className = "table-row";
+      row.textContent = watchedItems.length ? "No scripts match your search." : "No scripts in watched folders. Add a folder in App Settings.";
+      table.appendChild(row);
+    }
+    for (const it of list) {
+      const row = document.createElement("div");
+      row.className = "table-row";
+      const active = isActive(it);
+      const dotCell = document.createElement("div");
+      const dot = document.createElement("button");
+      dot.className = "install-dot" + (active ? " on" : "");
+      dot.title = active ? "Installed in Affinity" : "Install to Affinity";
+      dot.disabled = active || !bridgeOnline;
+      dot.onclick = async () => {
+        dot.disabled = true;
+        const result = await window.api.pushWatchedScript(it.folder, it.file);
+        if (result?.success) renderScreen();
+        else { alert(result?.error || "Install failed."); dot.disabled = false; }
+      };
+      dotCell.appendChild(dot);
+      const name = document.createElement("div");
+      name.className = "row-name";
+      name.textContent = it.name;
+      if (it.description) {
+        const description = document.createElement("div");
+        description.className = "row-desc";
+        description.textContent = it.description;
+        name.appendChild(description);
+      }
+      const modified = document.createElement("div");
+      modified.className = "row-meta";
+      modified.textContent = fmtRel(it.modified);
+      const size = document.createElement("div");
+      size.className = "row-meta";
+      size.textContent = fmtBytes(it.size);
+      const folder = document.createElement("button");
+      folder.className = "detail-link";
+      folder.textContent = it.folder;
+      folder.title = "Open watched folder";
+      folder.onclick = async () => {
+        const result = await window.api.openScriptFolder(it.folder);
+        if (!result?.success) alert(result?.error || "Could not open folder.");
+      };
+      row.append(dotCell, name, modified, size, folder);
+      table.appendChild(row);
+    }
+    container.appendChild(table);
   }
 
   function buildAffinityOnly(container) {
@@ -979,7 +1443,7 @@ async function renderLocal(root) {
     table.className = "table affinity-table";
     const hdr = document.createElement("div");
     hdr.className = "table-row header";
-    hdr.innerHTML = `<div class="col">Status</div><div class="col">Name</div><div class="col">Actions</div>`;
+    hdr.innerHTML = `<div class="col">${escapeHtml(t("local.status"))}</div><div class="col">${escapeHtml(t("local.name"))}</div><div class="col">${escapeHtml(t("local.actions"))}</div>`;
     table.appendChild(hdr);
 
     const emptyRow = (msg) => {
@@ -993,7 +1457,7 @@ async function renderLocal(root) {
     };
     if (!bridgeOnline)
       return emptyRow(
-        "Affinity isn't connected — open More info to check the bridge.",
+        t("affinityStatus.offlineMyScripts"),
       );
     if (orphans.length === 0)
       return emptyRow("Every script in Affinity is already in your library.");
@@ -1067,11 +1531,7 @@ async function renderLocal(root) {
   function buildLocalTable(container) {
     const q = state.localQuery.trim().toLowerCase();
     let list = q
-      ? items.filter((it) =>
-          [it.name, it.description, it.file].some((v) =>
-            (v || "").toLowerCase().includes(q),
-          ),
-        )
+      ? items.filter((it) => matchesLocalQuery(it, q))
       : items.slice();
     // Favorites float to the top (stable sort keeps the rest in place).
     list.sort(
@@ -1084,12 +1544,13 @@ async function renderLocal(root) {
     table.className = "table";
     const hdr = document.createElement("div");
     hdr.className = "table-row header";
-    hdr.innerHTML = `<div class="col">Status</div><div class="col">Name</div><div class="col">Modified</div><div class="col">Size</div><div class="col">Actions</div>`;
+    hdr.innerHTML = `<div class="col">${escapeHtml(t("local.status"))}</div><div class="col">${escapeHtml(t("local.name"))}</div><div class="col">${escapeHtml(t("local.modified"))}</div><div class="col">${escapeHtml(t("local.size"))}</div><div class="col">${escapeHtml(t("local.actions"))}</div>`;
     table.appendChild(hdr);
 
     if (list.length === 0) {
       const empty = document.createElement("div");
       empty.className = "table-row";
+      empty.style.display = "block";
       empty.style.padding = "48px 20px";
       empty.style.color = "var(--text-faint)";
       empty.textContent =
@@ -1136,6 +1597,21 @@ async function renderLocal(root) {
     const nameLine = document.createElement("div");
     nameLine.className = "row-name";
     nameLine.innerHTML = `${escapeHtml(it.name)}<span class="row-ext">.js</span>`;
+    const revision = it.file.match(/-([a-f0-9]{7})(?:-\d+)?\.js$/i);
+    if (revision) {
+      const badge = document.createElement("span");
+      badge.className = "tag";
+      badge.textContent = `rev ${revision[1]}`;
+      badge.title = it.file;
+      nameLine.appendChild(badge);
+    }
+    if (/-backup-\d+(?:-\d+)?\.js$/i.test(it.file)) {
+      const badge = document.createElement("span");
+      badge.className = "tag";
+      badge.textContent = "Backup";
+      badge.title = it.file;
+      nameLine.appendChild(badge);
+    }
 
     const favKey = scriptStem(it.file);
     const isFav = state.favorites.has(favKey);
@@ -1260,74 +1736,6 @@ async function renderLocal(root) {
   paintLocalTab();
 }
 
-// "More info" modal: Affinity bridge connection diagnostics + event stream.
-// (Scripts that are only in Affinity now live in the "Just in Affinity" tab.)
-function openBridgeModal() {
-  const bd = document.createElement("div");
-  bd.className = "modal-backdrop";
-  bd.innerHTML = `
-    <div class="modal bridge-modal">
-      <div class="modal-head">
-        <h3>Affinity connection</h3>
-        <button class="icon-btn" id="m-close"></button>
-      </div>
-      <div class="modal-body">
-        <div class="bridge-info">
-          <div class="bridge-info-row"><span class="k">Address</span><span class="v">localhost:6767</span></div>
-          <div class="bridge-info-row"><span class="k">Bridge version</span><span class="v">1.0.0</span></div>
-          <div class="bridge-info-row"><span class="k">Latency</span><span class="v" id="bm-latency">—</span></div>
-          <div class="bridge-info-row"><span class="k">Status</span><span class="v bm-status-cell"><span class="status-dot" id="bm-dot"></span><span id="bm-status"><span class="loading">checking</span></span></span></div>
-        </div>
-
-        <div class="bridge-section-head">
-          <span class="eyebrow">Event Stream</span>
-          <button class="gh-btn compact" id="bm-refresh">Refresh</button>
-        </div>
-        <div class="event-log" id="bm-log"></div>
-      </div>
-    </div>`;
-  bd.querySelector("#m-close").appendChild(Ico("close", { size: 12 }));
-  document.body.appendChild(bd);
-
-  const close = () => bd.remove();
-  bd.querySelector("#m-close").onclick = close;
-  bd.addEventListener("click", (e) => {
-    if (e.target === bd) close();
-  });
-
-  const log = bd.querySelector("#bm-log");
-  const pushEvent = (tag, msg) => {
-    const line = document.createElement("div");
-    line.className = "event-line";
-    const now = new Date().toTimeString().slice(0, 8);
-    line.innerHTML = `<span class="t">${now}</span><span class="tag-${tag}">${tag.toUpperCase()}</span><span class="msg">${escapeHtml(msg)}</span>`;
-    log.prepend(line);
-  };
-
-  async function load() {
-    pushEvent("info", "Attaching to bridge…");
-    const start = performance.now();
-    const bridgeRes = await window.api.listMcpScripts();
-    const elapsed = Math.round(performance.now() - start);
-    bd.querySelector("#bm-latency").textContent = `${elapsed} ms`;
-
-    const dot = bd.querySelector("#bm-dot");
-    const statusEl = bd.querySelector("#bm-status");
-    if (bridgeRes && bridgeRes.success) {
-      dot.classList.add("on");
-      statusEl.textContent = "online";
-      pushEvent("ok", `connected · ${elapsed}ms round-trip`);
-    } else {
-      dot.classList.remove("on");
-      statusEl.textContent = "offline";
-      pushEvent("warn", (bridgeRes && bridgeRes.error) || "bridge unreachable");
-    }
-  }
-
-  bd.querySelector("#bm-refresh").onclick = load;
-  load();
-}
-
 // ---------- Community Scripts screen ----------
 
 // A single shimmering placeholder card shown while community registries load.
@@ -1422,16 +1830,16 @@ async function renderCommunity(root) {
   screen.className = "screen";
   screen.innerHTML = `
     <div class="community-head">
-      <div class="eyebrow">Discover</div>
+      <div class="eyebrow">${escapeHtml(t("nav.discover"))}</div>
       <div class="screen-header">
         <div>
-          <h1 style="margin-bottom:6px">Community Scripts</h1>
-          <p class="subhead" style="margin:0"><span id="c-count">—</span> scripts from <span id="c-repos">—</span> repositories</p>
+          <h1 style="margin-bottom:6px">${escapeHtml(t("community.heading"))}</h1>
+          <p class="subhead" id="c-summary" style="margin:0">—</p>
         </div>
         <div class="actions">
-          <button class="gh-btn compact" id="btn-community-source"><span id="ico-src"></span> Source</button>
-          <button class="gh-btn compact" id="btn-community-settings"><span id="ico-gear"></span> Settings</button>
-          <button class="accent-btn compact" id="btn-community-submit"><span id="ico-plus"></span> Submit Script</button>
+          <button class="gh-btn compact" id="btn-community-source"><span id="ico-src"></span> ${escapeHtml(t("community.source"))}</button>
+          <button class="gh-btn compact" id="btn-community-settings"><span id="ico-gear"></span> ${escapeHtml(t("community.manageRepos"))}</button>
+          <button class="accent-btn compact" id="btn-community-submit"><span id="ico-plus"></span> ${escapeHtml(t("community.submitScript"))}</button>
         </div>
       </div>
     </div>
@@ -1440,15 +1848,23 @@ async function renderCommunity(root) {
       <div class="search-bar">
         <div class="search-wrap">
           <span id="c-search-icon"></span>
-          <input id="c-search" type="text" placeholder="Search scripts by name, author, description…" />
+          <input id="c-search" type="text" placeholder="${escapeHtml(t("community.searchPlaceholder"))}" />
           <span class="kbd">⌘K</span>
         </div>
         <div class="sort">
+          <select id="c-library-filter" aria-label="${escapeHtml(t("community.filterLabel"))}">
+            <option value="all">${escapeHtml(t("community.allStates"))}</option>
+            <option value="present">${escapeHtml(t("community.inLibrary"))}</option>
+            <option value="missing">${escapeHtml(t("community.notInLibrary"))}</option>
+            <option value="update">${escapeHtml(t("community.updatesAvailable"))}</option>
+          </select>
+        </div>
+        <div class="sort">
           <select id="c-sort">
-            <option value="recent">Recently Added</option>
+            <option value="recent">${escapeHtml(t("community.recentlyAdded"))}</option>
             <option value="name">A — Z</option>
-            <option value="category">Category</option>
-            <option value="author">Author</option>
+            <option value="category">${escapeHtml(t("community.category"))}</option>
+            <option value="author">${escapeHtml(t("community.author"))}</option>
           </select>
         </div>
       </div>
@@ -1462,8 +1878,8 @@ async function renderCommunity(root) {
       <section class="community-carousel" id="c-featured" hidden>
         <div class="cc-viewport">
           <div class="cc-track" id="c-featured-track"></div>
-          <button class="cc-arrow cc-prev" id="cc-prev" title="Previous"></button>
-          <button class="cc-arrow cc-next" id="cc-next" title="Next"></button>
+          <button class="cc-arrow cc-prev" id="cc-prev" title="${escapeHtml(t("community.previous"))}"></button>
+          <button class="cc-arrow cc-next" id="cc-next" title="${escapeHtml(t("community.next"))}"></button>
         </div>
         <div class="cc-dots" id="c-featured-dots"></div>
       </section>
@@ -1486,8 +1902,10 @@ async function renderCommunity(root) {
     window.api.openUrl(
       "https://github.com/JiriKrblich/Affinity-Community-Scripts",
     );
-  screen.querySelector("#btn-community-settings").onclick = () =>
-    openSettingsModal();
+  screen.querySelector("#btn-community-settings").onclick = () => {
+    state.settingsFocus = "repositories";
+    navigate("app-settings");
+  };
   screen.querySelector("#btn-community-submit").onclick = () =>
     openShareModal({});
 
@@ -1497,7 +1915,7 @@ async function renderCommunity(root) {
     Array.from({ length: 8 }).map(communitySkeletonCard).join(""),
   );
 
-  const res = await window.api.listCommunityScripts();
+  const res = await window.api.listCommunityScripts(true);
   const scripts = res && res.success ? res.data || [] : [];
   renderCommunityErrors(screen.querySelector("#c-errors"), res);
   const favoritesRes = await window.api.getFavorites();
@@ -1509,39 +1927,49 @@ async function renderCommunity(root) {
   //   install    — not in the library yet
   //   installed  — in the library at the same/newer version (grey, no action)
   //   update     — in the library but the community has a newer version (orange)
-  const localRes = await window.api
-    .listLocalScripts()
-    .catch(() => ({ success: false }));
+  // Watched folders count as library presence, but updates are applied only to
+  // scripts in the main writable folder.
+  const [localRes, watchedRes] = await Promise.all([
+    window.api.listLocalScripts().catch(() => ({ success: false })),
+    window.api.listWatchedScripts().catch(() => ({ success: false })),
+  ]);
   const localByStem = new Map();
+  const indexLocal = (it) => {
+    localByStem.set(it.file.replace(/\.js$/i, "").toLowerCase(), it);
+    if (it.name)
+      localByStem.set(it.name.toLowerCase().replace(/[^a-z0-9_-]/g, "-"), it);
+  };
+  if (watchedRes?.success && Array.isArray(watchedRes.data)) {
+    for (const it of watchedRes.data) indexLocal({ ...it, watched: true });
+  }
   if (localRes && localRes.success && Array.isArray(localRes.data)) {
-    for (const it of localRes.data) {
-      localByStem.set(it.file.replace(/\.js$/i, "").toLowerCase(), it);
-      if (it.name)
-        localByStem.set(it.name.toLowerCase().replace(/[^a-z0-9_-]/g, "-"), it);
-    }
+    for (const it of localRes.data) indexLocal(it);
   }
   function communityInstallState(s) {
-    if (state.installedIds.has(s.download_url)) return "installed";
     const stem = (s.name || "").toLowerCase().replace(/[^a-z0-9_-]/g, "-");
     const local = localByStem.get(stem);
     if (!local) return "install";
+    if (local.watched) return "installed";
     if (s.version && local.version && cmpVer(local.version, s.version) < 0)
       return "update";
     return "installed";
   }
   // Button appearance for a community script's install state.
   function communityBtnSpec(s) {
+    if (s._unavailableReason)
+      return { cls: " unavailable", label: t("community.scriptUnavailable"), disabled: true };
     const st = communityInstallState(s);
     if (st === "installed")
-      return { cls: " installed", label: "✓ Installed", disabled: true };
+      return { cls: " installed", label: `✓ ${t("community.inLibrary")}`, disabled: true };
     if (st === "update")
-      return { cls: " update", label: "↑ Update", disabled: false };
-    return { cls: "", label: "Install", disabled: false };
+      return { cls: " update", label: `↑ ${t("community.update")}`, disabled: false };
+    return { cls: "", label: t("community.install"), disabled: false };
   }
 
   // Install-button click: install fresh, or (for the update state) open the same
   // explanatory popup as My Scripts so users understand Affinity can't overwrite.
   function handleCommunityInstallClick(s, button) {
+    if (s._unavailableReason) return;
     if (communityInstallState(s) !== "update") {
       installCommunityScript(s, button);
       return;
@@ -1566,10 +1994,11 @@ async function renderCommunity(root) {
     });
   }
 
-  screen.querySelector("#c-count").textContent = scripts.length;
   updateNavCount("community", scripts.length);
   const repos = new Set(scripts.map((s) => s._source).filter(Boolean));
-  screen.querySelector("#c-repos").textContent = repos.size;
+  screen.querySelector("#c-summary").textContent = t("community.countSummary", {
+    scripts: scripts.length, repositories: repos.size,
+  });
 
   // Build category list
   const catCounts = new Map();
@@ -1596,9 +2025,9 @@ async function renderCommunity(root) {
         "cat-tab" + (state.communityFilter === c ? " active" : "");
       const label =
         c === "all"
-          ? "All"
+          ? t("community.all")
           : c === "__favorites"
-            ? "Favorites"
+            ? t("community.favorites")
             : c[0].toUpperCase() + c.slice(1);
       btn.innerHTML = `<span>${escapeHtml(label)}</span><span class="count">${count}</span>`;
       btn.onclick = () => {
@@ -1620,6 +2049,12 @@ async function renderCommunity(root) {
   sortSel.value = state.communitySort;
   sortSel.onchange = (e) => {
     state.communitySort = e.target.value;
+    paint();
+  };
+  const libraryFilterSel = screen.querySelector("#c-library-filter");
+  libraryFilterSel.value = state.communityLibraryFilter;
+  libraryFilterSel.onchange = (e) => {
+    state.communityLibraryFilter = e.target.value;
     paint();
   };
 
@@ -1670,7 +2105,9 @@ async function renderCommunity(root) {
   // search, so it promotes curated picks without cluttering filtered results.
   function paintFeaturedRail() {
     const show =
-      state.communityFilter === "all" && !state.communityQuery.trim();
+      state.communityFilter === "all" &&
+      state.communityLibraryFilter === "all" &&
+      !state.communityQuery.trim();
     const featured = show ? scripts.filter((s) => s._featured) : [];
     stopCarouselAutoplay();
     carouselTrack.innerHTML = "";
@@ -1712,17 +2149,18 @@ async function renderCommunity(root) {
         ${
           imageUrl
             ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(s.name || "Featured script preview")}">`
-            : `<div class="cc-media-ph">No preview image</div>`
+            : `<div class="cc-media-ph">${escapeHtml(t("community.noPreview"))}</div>`
         }
       </div>
       <div class="cc-body">
-        <div class="cc-eyebrow">Featured</div>
+        <div class="cc-eyebrow">${escapeHtml(t("community.featured"))}</div>
         <h3>${escapeHtml(s.name || "(untitled)")}</h3>
-        <div class="cc-author">by ${escapeHtml(s.author || "community")}</div>
+        <div class="cc-author">${escapeHtml(t("community.by", { author: s.author || "community" }))}</div>
         <p class="cc-desc">${escapeHtml(s.description || "")}</p>
+        ${s._unavailableReason ? `<p class="community-unavailable-note">${escapeHtml(t("community.scriptUnavailableHelp"))}</p>` : ""}
         <div class="cc-actions">
-          <button class="accent-btn compact cc-install${spec.cls}"${spec.disabled ? " disabled" : ""}>${spec.label}</button>
-          <button class="gh-btn compact cc-details">Details</button>
+          <button class="accent-btn compact cc-install${spec.cls}"${spec.disabled ? " disabled" : ""}>${escapeHtml(spec.label)}</button>
+          <button class="gh-btn compact cc-details">${escapeHtml(t("community.details"))}</button>
         </div>
       </div>`;
 
@@ -1731,12 +2169,13 @@ async function renderCommunity(root) {
       media.onerror = () => {
         const ph = document.createElement("div");
         ph.className = "cc-media-ph";
-        ph.textContent = "Preview unavailable";
+        ph.textContent = t("community.previewUnavailable");
         media.replaceWith(ph);
       };
     }
 
     const installBtn = slide.querySelector(".cc-install");
+    if (s._unavailableReason) installBtn.title = t("community.scriptUnavailableHelp");
     installBtn.onclick = (e) => {
       e.stopPropagation();
       handleCommunityInstallClick(s, installBtn);
@@ -1784,45 +2223,60 @@ async function renderCommunity(root) {
   }
 
   async function saveCommunityScriptToLibrary(script, button) {
+    if (script._unavailableReason) return false;
     if (button) button.disabled = true;
-    const r = await window.api.saveCommunityScript(
-      script.download_url,
-      script.name,
-      communityScriptMetadata(script),
-    );
+    let r;
+    try {
+      r = await window.api.saveCommunityScript(
+        script.download_url,
+        script.name,
+        communityScriptMetadata(script),
+      );
+    } catch (error) {
+      r = { success: false, error: error.message };
+    }
     if (!r || !r.success) {
       alert((r && r.error) || "Save failed");
       if (button) button.disabled = false;
       return false;
     }
+    indexLocal({ file: `${scriptStem(script.name)}.js`, name: script.name, version: script.version });
+    paint();
     return true;
   }
 
   async function installCommunityScript(script, button) {
-    if (state.installedIds.has(script.download_url)) return true;
     if (button) {
       button.innerHTML = '<span class="loading">Installing</span>';
       button.disabled = true;
     }
-    const r = await window.api.downloadCommunityScript(
-      script.download_url,
-      script.name,
-      communityScriptMetadata(script),
-    );
+    let r;
+    try {
+      r = await window.api.downloadCommunityScript(
+        script.download_url,
+        script.name,
+        communityScriptMetadata(script),
+      );
+    } catch (error) {
+      r = { success: false, error: error.message };
+    }
     if (!r || !r.success) {
       alert((r && r.error) || "Download failed");
       if (button) {
-        button.textContent = "Install";
+        button.textContent = t("community.install");
         button.disabled = false;
       }
       return false;
     }
-    state.installedIds.add(script.download_url);
+    if (r.installed === false) {
+      alert(`Saved to My Scripts, but installation in Affinity failed: ${r.warning || "Bridge unavailable"}. Retry from My Scripts.`);
+    }
+    indexLocal({ file: `${scriptStem(script.name)}.js`, name: script.name, version: script.version });
     if (button) {
       button.classList.remove("update");
       button.classList.add("installed");
       button.disabled = true;
-      button.textContent = "\u2713 Installed";
+      button.textContent = "\u2713 In library";
     }
     paint();
     return true;
@@ -1850,18 +2304,18 @@ async function renderCommunity(root) {
             ${
               imageUrl
                 ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(script.name || "Community script preview")}">`
-                : `<div class="community-detail-placeholder">No preview image</div>`
+                : `<div class="community-detail-placeholder">${escapeHtml(t("community.noPreview"))}</div>`
             }
           </div>
           <div class="community-detail-content">
             <div class="community-detail-meta">
-              ${script._featured ? `<span class="c-featured-badge">Featured</span>` : ""}
+              ${script._featured ? `<span class="c-featured-badge">${escapeHtml(t("community.featured"))}</span>` : ""}
               <span class="tag">v${escapeHtml(script.version || "1.0.0")}</span>
               <span class="tag">${escapeHtml((script.category || "other").toLowerCase())}</span>
             </div>
             <h2>${escapeHtml(script.name || "(untitled)")}</h2>
             <div class="community-detail-author">
-              <span>by ${escapeHtml(script.author || "community")}</span>
+              <span>${escapeHtml(t("community.by", { author: script.author || "community" }))}</span>
               ${
                 contributors
                   ? `<span class="community-detail-separator">|</span><span>contributors: ${escapeHtml(contributors)}</span>`
@@ -1879,15 +2333,28 @@ async function renderCommunity(root) {
             <div class="community-detail-desc">${
               script.description
                 ? escapeHtml(script.description)
-                : `<span class="community-detail-desc-empty">No description provided.</span>`
+                : `<span class="community-detail-desc-empty">${escapeHtml(t("community.noDescription"))}</span>`
             }</div>
+            ${script._unavailableReason ? `<p class="community-unavailable-note">${escapeHtml(t("community.scriptUnavailableHelp"))}</p>` : ""}
+            <div class="community-history">
+              <button class="gh-btn" id="m-history">${escapeHtml(t("community.versionHistory"))}</button>
+            </div>
           </div>
+        </div>
+        <div class="community-history-view" id="m-history-view" hidden>
+          <div class="community-history-head">
+            <button class="gh-btn" id="m-history-back">← Back</button>
+            <h2>${escapeHtml(t("community.versionHistory"))}</h2>
+            <p>${escapeHtml(script.name || "Community script")}</p>
+          </div>
+          <div class="community-history-note">Install adds a revision to My Scripts and Affinity. Downgrade replaces the local script after saving a backup; if it is installed in Affinity, remove it there before installing the older version.</div>
+          <div id="m-history-list" class="community-history-list"></div>
         </div>
         <div class="modal-foot community-detail-actions">
           <button class="gh-btn" id="m-favorite"></button>
-          <button class="gh-btn" id="m-run"><span id="ico-run"></span> Run without install</button>
+          <button class="gh-btn" id="m-run"><span id="ico-run"></span> ${escapeHtml(t("community.runWithoutInstall"))}</button>
           <button class="gh-btn" id="m-save"></button>
-          <button class="accent-btn${spec.cls}" id="m-install"${spec.disabled ? " disabled" : ""}>${spec.label}</button>
+          <button class="accent-btn${spec.cls}" id="m-install"${spec.disabled ? " disabled" : ""}>${escapeHtml(spec.label)}</button>
         </div>
       </div>`;
     document.body.appendChild(bd);
@@ -1920,6 +2387,74 @@ async function renderCommunity(root) {
       };
     }
 
+    const historyBtn = bd.querySelector("#m-history");
+    const historyList = bd.querySelector("#m-history-list");
+    const historyView = bd.querySelector("#m-history-view");
+    const detailView = bd.querySelector(".community-detail-scroll");
+    const detailActions = bd.querySelector(".community-detail-actions");
+    bd.querySelector("#m-history-back").onclick = () => {
+      historyView.hidden = true;
+      detailView.hidden = false;
+      detailActions.hidden = false;
+    };
+    historyBtn.onclick = async () => {
+      detailView.hidden = true;
+      detailActions.hidden = true;
+      historyView.hidden = false;
+      historyList.textContent = t("community.loadingHistory");
+      const result = await window.api.listScriptHistory(script);
+      if (!document.body.contains(bd) || historyView.hidden) return;
+      if (!result?.success) {
+        historyList.textContent = result?.error || "Could not load history.";
+        return;
+      }
+      const commits = result.data || [];
+      if (!commits.length) {
+        historyList.textContent = t("community.noRevisions");
+        return;
+      }
+      const local = localByStem.get(scriptStem(script.name));
+      historyList.innerHTML = commits.map((commit) => `
+        <div class="community-history-row">
+          <div><strong>${commit.date && !Number.isNaN(Date.parse(commit.date)) ? escapeHtml(new Date(commit.date).toLocaleDateString()) : "Unknown date"}</strong>
+            ${commit.version ? `<span class="tag">v${escapeHtml(commit.version)}</span>` : ""}
+            <span class="community-history-sha">${escapeHtml(commit.sha.slice(0, 7))}</span>
+            <div class="community-history-message">${escapeHtml(commit.message)}</div>
+          </div>
+          <div class="community-history-actions">
+            <button class="gh-btn" data-sha="${commit.sha}" data-action="copy">${escapeHtml(t("community.saveCopy"))}</button>
+            <button class="accent-btn" data-sha="${commit.sha}" data-action="${local ? "downgrade" : "install"}">${local ? "Downgrade" : "Install"}</button>
+          </div>
+        </div>`).join("");
+      historyList.querySelectorAll("[data-sha]").forEach((button) => {
+        button.onclick = async () => {
+          const action = button.dataset.action;
+          if (action === "downgrade" && !confirm("Replace the local script with this revision? A backup will be saved in My Scripts. If the script is installed in Affinity, remove that copy there before installing the older revision.")) return;
+          button.disabled = true;
+          button.textContent = action === "install" ? "Installing…" : "Saving…";
+          const saved = await window.api.saveScriptRevision(script, button.dataset.sha, action, localByStem.get(scriptStem(script.name))?.file);
+          if (!saved?.success) {
+            button.disabled = false;
+            button.textContent = action === "copy" ? "Save copy" : action === "install" ? "Install" : "Downgrade";
+            alert(saved?.error || "Could not save revision.");
+            return;
+          }
+          button.textContent = action === "copy" ? "Copy saved" : action === "install" ? (saved.installed ? "Installed" : "Saved locally") : "Downgraded";
+          button.title = saved.filename;
+          if (action !== "copy") {
+            localByStem.set(scriptStem(script.name), { file: saved.filename, version: saved.version });
+            paint();
+            historyList.querySelectorAll('[data-action="install"]').forEach((installButton) => {
+              if (installButton === button) return;
+              installButton.dataset.action = "downgrade";
+              installButton.textContent = t("community.downgrade");
+            });
+          }
+          if (saved.warning) alert(saved.warning);
+        };
+      });
+    };
+
     const favoriteBtn = bd.querySelector("#m-favorite");
     const paintFavoriteBtn = () => {
       const active = state.favorites.has(communityFavoriteKey(script));
@@ -1935,6 +2470,8 @@ async function renderCommunity(root) {
     };
 
     const saveBtn = bd.querySelector("#m-save");
+    saveBtn.disabled = !!script._unavailableReason;
+    if (script._unavailableReason) saveBtn.title = t("community.scriptUnavailableHelp");
     saveBtn.appendChild(Ico("download", { size: 14, sw: 1.4 }));
     saveBtn.append(document.createTextNode(" Download"));
     saveBtn.onclick = async () => {
@@ -1951,11 +2488,13 @@ async function renderCommunity(root) {
     };
 
     const runBtn = bd.querySelector("#m-run");
+    runBtn.disabled = !!script._unavailableReason;
     runBtn.querySelector("#ico-run").appendChild(Ico("terminal", { size: 13 }));
     runBtn.onclick = () =>
       openRunModal({ downloadUrl: script.download_url, name: script.name });
 
     const installBtn = bd.querySelector("#m-install");
+    if (script._unavailableReason) installBtn.title = t("community.scriptUnavailableHelp");
     installBtn.onclick = () => handleCommunityInstallClick(script, installBtn);
   }
 
@@ -1963,6 +2502,10 @@ async function renderCommunity(root) {
     paintFeaturedRail();
     const q = state.communityQuery.toLowerCase();
     let filtered = scripts.filter((s) => {
+      const libraryState = communityInstallState(s);
+      if (state.communityLibraryFilter === "missing" && libraryState !== "install") return false;
+      if (state.communityLibraryFilter === "present" && libraryState === "install") return false;
+      if (state.communityLibraryFilter === "update" && libraryState !== "update") return false;
       const favoriteKey = communityFavoriteKey(s);
       if (state.communityFilter === "__favorites") {
         if (!state.favorites.has(favoriteKey)) return false;
@@ -2001,11 +2544,16 @@ async function renderCommunity(root) {
       const empty = document.createElement("div");
       empty.style.cssText =
         "grid-column: 1/-1; text-align:center; padding:48px; color:var(--text-faint); font-size:13px;";
-      empty.textContent = q
-        ? `No scripts match "${q}".`
-        : state.communityFilter === "__favorites"
-          ? "No favorite scripts yet."
-          : "No scripts in this category.";
+      if (q) empty.textContent = `No scripts match "${q}" with the current filters.`;
+      else if (state.communityLibraryFilter === "missing")
+        empty.textContent = t("community.emptyAllSaved");
+      else if (state.communityLibraryFilter === "present")
+        empty.textContent = t("community.emptyNoneSaved");
+      else if (state.communityLibraryFilter === "update")
+        empty.textContent = t("community.emptyNoUpdates");
+      else if (state.communityFilter === "__favorites")
+        empty.textContent = t("community.emptyNoFavorites");
+      else empty.textContent = t("community.emptyCategory");
       grid.appendChild(empty);
       return;
     }
@@ -2032,18 +2580,19 @@ async function renderCommunity(root) {
         <div class="top-row">
           <h3>${escapeHtml(s.name || "(untitled)")}</h3>
           <div class="card-actions">
-            ${s._featured ? `<span class="c-featured-badge">Featured</span>` : ""}
+            ${s._featured ? `<span class="c-featured-badge">${escapeHtml(t("community.featured"))}</span>` : ""}
             <span class="tag">v${escapeHtml(s.version || "1.0.0")}</span>
             <button class="icon-btn c-favorite${isFavorite ? " active" : ""}" title="${isFavorite ? "Remove from favorites" : "Add to favorites"}"></button>
           </div>
         </div>
-        <div class="author">by ${escapeHtml(s.author || "community")}</div>
+        <div class="author">${escapeHtml(t("community.by", { author: s.author || "community" }))}</div>
         <div class="desc">${escapeHtml(s.description || "")}</div>
+        ${s._unavailableReason ? `<div class="community-unavailable-note">${escapeHtml(t("community.scriptUnavailableHelp"))}</div>` : ""}
         <div class="foot">
           <span class="tag">${escapeHtml((s.category || "other").toLowerCase())}</span>
           <div style="display:flex; gap:6px; align-items:center;">
             <button class="icon-btn c-save" title="Save to My Scripts (don't install)"></button>
-            <button class="install-btn${spec.cls}"${spec.disabled ? " disabled" : ""}>${spec.label}</button>
+            <button class="install-btn${spec.cls}"${spec.disabled ? " disabled" : ""}>${escapeHtml(spec.label)}</button>
           </div>
         </div>
       `);
@@ -2054,7 +2603,7 @@ async function renderCommunity(root) {
         previewImg.onerror = () => {
           const ph = document.createElement("div");
           ph.className = "c-card-preview-ph";
-          ph.textContent = "Preview unavailable";
+          ph.textContent = t("community.previewUnavailable");
           previewImg.replaceWith(ph);
         };
       }
@@ -2067,6 +2616,8 @@ async function renderCommunity(root) {
       };
 
       const saveBtn = card.querySelector(".c-save");
+      saveBtn.disabled = !!s._unavailableReason;
+      if (s._unavailableReason) saveBtn.title = t("community.scriptUnavailableHelp");
       saveBtn.appendChild(Ico("download", { size: 13, sw: 1.4 }));
       saveBtn.onclick = async (e) => {
         e.stopPropagation();
@@ -2082,6 +2633,7 @@ async function renderCommunity(root) {
       };
 
       const btn = card.querySelector(".install-btn");
+      if (s._unavailableReason) btn.title = t("community.scriptUnavailableHelp");
       btn.onclick = (e) => {
         e.stopPropagation();
         handleCommunityInstallClick(s, btn);
@@ -2102,21 +2654,198 @@ async function renderCommunity(root) {
   }
 }
 
+// ---------- Affinity status ----------
+function renderAffinityStatus(root) {
+  const screen = document.createElement("div");
+  screen.className = "screen affinity-status-screen";
+  screen.innerHTML = `
+    <div class="eyebrow">${escapeHtml(t("nav.support"))}</div>
+    <div class="affinity-status-header">
+      <div><h1>${escapeHtml(t("nav.affinityStatus"))}</h1><p class="subhead">${escapeHtml(t("affinityStatus.subtitle"))}</p></div>
+      <button class="gh-btn" id="affinity-status-refresh">${escapeHtml(t("affinityStatus.refresh"))}</button>
+    </div>
+    <div id="affinity-status-content" aria-live="polite"></div>
+    <details class="event-stream affinity-status-events">
+      <summary>${escapeHtml(t("affinityStatus.eventStream"))}</summary>
+      <div class="event-log" id="affinity-status-log"></div>
+    </details>
+  `;
+  root.appendChild(screen);
+  const button = screen.querySelector("#affinity-status-refresh");
+  const content = screen.querySelector("#affinity-status-content");
+  const log = screen.querySelector("#affinity-status-log");
+  const pushEvent = (tag, message) => {
+    const line = document.createElement("div");
+    line.className = "event-line";
+    line.innerHTML = `<span class="t">${new Date().toTimeString().slice(0, 8)}</span><span class="tag-${tag}">${tag.toUpperCase()}</span><span class="msg">${escapeHtml(message)}</span>`;
+    log.prepend(line);
+    while (log.children.length > 20) log.lastElementChild.remove();
+  };
+  const check = async () => {
+    button.disabled = true;
+    content.innerHTML = `<div class="affinity-status-loading loading-indicator">${escapeHtml(t("affinityStatus.checking"))}</div>`;
+    pushEvent("info", t("affinityStatus.checking"));
+    const result = await window.api.getAffinityHealth();
+    if (!screen.isConnected) return;
+    button.disabled = false;
+    if (!result?.success) {
+      pushEvent("warn", result?.error || t("affinityStatus.disconnected"));
+      content.innerHTML = `
+        <div class="affinity-status-card">
+          <h2>${escapeHtml(t("affinityStatus.connection"))}</h2>
+          <div class="affinity-status-row"><span>${escapeHtml(t("affinityStatus.address"))}</span><span>localhost:6767</span></div>
+          <div class="affinity-status-row"><span>${escapeHtml(t("affinityStatus.status"))}</span><span class="affinity-status-badge bad">${escapeHtml(t("affinityStatus.disconnected"))}</span></div>
+          <p>${escapeHtml(t("affinityStatus.offlineHelp"))}</p>
+          <p class="affinity-status-error">${escapeHtml(result?.error || "")}</p>
+        </div>`;
+      return;
+    }
+    const { permissions, roots, desktopPath, desktopAllowed, latencyMs, serverVersion } = result.data;
+    pushEvent("ok", t("affinityStatus.connectedIn", { ms: latencyMs }));
+    const permissionRow = (label, enabled) => `<div class="affinity-status-row"><span>${escapeHtml(t(label))}</span><span class="affinity-status-badge ${enabled ? "good" : "bad"}">${escapeHtml(t(enabled ? "affinityStatus.allowed" : "affinityStatus.denied"))}</span></div>`;
+    content.innerHTML = `
+      <div class="affinity-status-card">
+        <h2>${escapeHtml(t("affinityStatus.connection"))}</h2>
+        <div class="affinity-status-row"><span>${escapeHtml(t("affinityStatus.address"))}</span><span>localhost:6767</span></div>
+        <div class="affinity-status-row"><span>${escapeHtml(t("affinityStatus.serverVersion"))}</span><span>${escapeHtml(serverVersion || "—")}</span></div>
+        <div class="affinity-status-row"><span>${escapeHtml(t("affinityStatus.latency"))}</span><span>${latencyMs} ms</span></div>
+        <div class="affinity-status-row"><span>${escapeHtml(t("affinityStatus.status"))}</span><span class="affinity-status-badge good">${escapeHtml(t("affinityStatus.connected"))}</span></div>
+      </div>
+      <section class="affinity-status-card">
+        <h2>${escapeHtml(t("affinityStatus.permissions"))}</h2>
+        ${permissionRow("affinityStatus.fileSystem", permissions.fileSystem)}
+        ${permissionRow("affinityStatus.desktop", desktopAllowed)}
+        ${permissionRow("affinityStatus.network", permissions.network)}
+        ${permissionRow("affinityStatus.ai", permissions.genAI)}
+        ${!desktopAllowed ? `<p class="affinity-status-help">${escapeHtml(t("affinityStatus.desktopHelp"))}</p>` : ""}
+      </section>
+      <section class="affinity-status-card">
+        <h2>${escapeHtml(t("affinityStatus.folders"))}</h2>
+        <p>${escapeHtml(t("affinityStatus.desktopPath", { path: desktopPath || "—" }))}</p>
+        ${roots.length ? `<ul class="affinity-status-roots">${roots.map((rootPath) => `<li>${escapeHtml(rootPath)}</li>`).join("")}</ul>` : `<p>${escapeHtml(t("affinityStatus.noFolders"))}</p>`}
+      </section>
+      <p class="affinity-status-note">${escapeHtml(t("affinityStatus.scopeNote"))}</p>
+    `;
+  };
+  button.onclick = check;
+  check();
+}
+
+// ---------- Useful links ----------
+const RESOURCE_LINKS = [
+  {
+    group: "official",
+    title: "nav.officialAffinitySdk",
+    description: "resources.officialDescription",
+    url: "https://sdk.affinity.studio/",
+    domain: "sdk.affinity.studio",
+    icon: "book",
+    mark: "SDK",
+    theme: "official",
+  },
+  {
+    group: "community",
+    title: "nav.codexAffinityMcp",
+    description: "resources.mcpDescription",
+    url: "https://github.com/Stolgeth/mcp.af",
+    domain: "github.com/Stolgeth/mcp.af",
+    icon: "plug",
+    mark: "MCP",
+    theme: "mcp",
+    image: "assets/resource-mcp-wordmark.svg",
+  },
+  {
+    group: "community",
+    title: "resources.setupGuideTitle",
+    description: "resources.setupGuideDescription",
+    url: "https://bolloplayer.github.io/affinity-mcp-setup/",
+    domain: "bolloplayer.github.io",
+    icon: "book",
+    mark: "GUIDE",
+    theme: "guide",
+    image: "assets/resource-affinity-mcp-guide.jpg",
+  },
+];
+
+function renderResources(root) {
+  const screen = document.createElement("div");
+  screen.className = "screen";
+  screen.innerHTML = `
+    <div class="eyebrow">${escapeHtml(t("nav.support"))}</div>
+    <h1>${escapeHtml(t("nav.resources"))}</h1>
+    <p class="subhead">${escapeHtml(t("resources.subtitle"))}</p>
+    <div class="resource-sections"></div>
+  `;
+  root.appendChild(screen);
+  const grids = {};
+  for (const group of ["official", "community"]) {
+    const section = document.createElement("section");
+    section.className = "resource-section";
+    section.innerHTML = `<h2>${escapeHtml(t(`resources.${group}Section`))}</h2><div class="resource-grid"></div>`;
+    screen.querySelector(".resource-sections").appendChild(section);
+    grids[group] = section.querySelector(".resource-grid");
+  }
+  for (const resource of RESOURCE_LINKS) {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "resource-card";
+    card.setAttribute("aria-label", `${t("resources.openLink")}: ${t(resource.title)}`);
+    card.innerHTML = `
+      <span class="resource-preview resource-preview-${resource.theme}${resource.image ? " resource-preview-image" : ""}">
+        ${resource.image ? `<img class="resource-preview-photo" src="${escapeHtml(resource.image)}" alt="" loading="lazy">` : `<span class="resource-preview-icon"></span><span class="resource-preview-mark">${escapeHtml(resource.mark)}</span>`}
+      </span>
+      <span class="resource-card-content">
+        <strong class="resource-card-title">${escapeHtml(t(resource.title))}</strong>
+        <span class="resource-card-description">${escapeHtml(t(resource.description))}</span>
+        <span class="resource-card-footer">
+          <span class="resource-card-domain">${escapeHtml(resource.domain)}</span>
+          <span class="resource-card-action">${escapeHtml(t("resources.openLink"))}<span class="resource-card-external"></span></span>
+        </span>
+      </span>
+    `;
+    if (!resource.image) card.querySelector(".resource-preview-icon").appendChild(Ico(resource.icon, { size: 32, sw: 1.4 }));
+    card.querySelector(".resource-card-external").appendChild(Ico("external", { size: 12 }));
+    card.onclick = () => window.api.openUrl(resource.url);
+    grids[resource.group].appendChild(card);
+  }
+}
+
 // ---------- Documentation screen ----------
 let docsCache = null;
+let docsCacheVersion = null;
 
 async function renderDocs(root) {
   const screen = document.createElement("div");
   screen.className = "screen";
   screen.innerHTML = `
-    <div class="eyebrow">Support</div>
-    <h1>Documentation</h1>
-    <p class="subhead" id="docs-sub"><span class="loading">Fetching topics</span></p>
+    <div class="eyebrow">${escapeHtml(t("nav.support"))}</div>
+    <div class="docs-header">
+      <div>
+        <h1>${escapeHtml(t("nav.documentation"))}</h1>
+        <p class="subhead" id="docs-sub"><span class="loading">${escapeHtml(t("docs.subtitleLoading"))}</span></p>
+      </div>
+      <div class="docs-header-actions">
+        <button class="gh-btn compact" id="docs-export">${escapeHtml(t("docs.exportMarkdown"))}</button>
+        <div class="docs-export-progress" id="docs-export-progress" hidden>
+          <progress class="docs-progress" id="docs-progress" max="100" value="0"></progress>
+        </div>
+        <span id="docs-export-status" class="subhead"></span>
+      </div>
+    </div>
+
+    <section class="api-monitor">
+      <div class="api-monitor-head">
+        <div><h2>${escapeHtml(t("docs.apiChanges"))}</h2><p id="api-monitor-status">${escapeHtml(t("docs.checkingVersion"))}</p></div>
+        <button class="gh-btn compact" id="api-monitor-refresh" disabled>${escapeHtml(t("docs.checkNow"))}</button>
+      </div>
+      <div id="api-monitor-changes"></div>
+      <div id="api-monitor-scan"></div>
+    </section>
 
     <div class="search-bar" style="margin-bottom: 20px;">
       <div class="search-wrap">
         <span id="docs-search-ico"></span>
-        <input id="docs-q" type="text" placeholder="Search the SDK for hints and examples" />
+        <input id="docs-q" type="text" placeholder="${escapeHtml(t("docs.searchPlaceholder"))}" />
         <span class="kbd">↵</span>
       </div>
     </div>
@@ -2129,6 +2858,141 @@ async function renderDocs(root) {
   screen
     .querySelector("#docs-search-ico")
     .appendChild(Ico("search", { size: 13 }));
+
+  const exportButton = screen.querySelector("#docs-export");
+  const exportStatus = screen.querySelector("#docs-export-status");
+  const progressBox = screen.querySelector("#docs-export-progress");
+  const progressBar = screen.querySelector("#docs-progress");
+  exportButton.onclick = async () => {
+    exportButton.disabled = true;
+    exportStatus.textContent = t("docs.exporting");
+    exportStatus.classList.add("loading-indicator");
+    progressBox.hidden = false;
+    progressBar.value = 0;
+    const stopProgress = window.api.onDocsProgress(({ done, total }) => {
+      if (!screen.isConnected) return;
+      progressBar.value = total ? Math.round(done / total * 100) : 0;
+      exportStatus.textContent = t("docs.exportProgress", { done, total });
+    });
+    try {
+      const result = await window.api.exportDocs();
+      exportStatus.textContent = !result?.success
+        ? result?.error || t("common.unknownError")
+        : result.canceled ? "" : t("docs.exported", { version: result.data.version });
+    } catch (error) {
+      exportStatus.textContent = error.message || t("common.unknownError");
+    } finally {
+      stopProgress();
+      progressBox.hidden = true;
+      exportStatus.classList.remove("loading-indicator");
+      exportButton.disabled = false;
+    }
+  };
+
+  const monitorStatus = screen.querySelector("#api-monitor-status");
+  const monitorChanges = screen.querySelector("#api-monitor-changes");
+  const monitorScan = screen.querySelector("#api-monitor-scan");
+  const refreshMonitor = screen.querySelector("#api-monitor-refresh");
+  async function showApiMonitor(sync) {
+    refreshMonitor.disabled = true;
+    monitorStatus.textContent = t(sync ? "docs.checkingSdk" : "docs.loadingSnapshots");
+    monitorStatus.classList.add("loading-indicator");
+    let result;
+    try {
+      result = sync ? await window.api.syncApiMonitor() : await window.api.getApiMonitor();
+    } catch (error) {
+      result = { success: false, error: error.message };
+    }
+    const syncError = sync && !result?.success ? result?.error || "Affinity is unavailable." : null;
+    if (syncError) {
+      const cached = await window.api.getApiMonitor().catch(() => null);
+      if (cached?.success && cached.data.currentVersion) result = cached;
+    }
+    monitorStatus.classList.remove("loading-indicator");
+    if (!screen.isConnected) return;
+    refreshMonitor.disabled = false;
+    monitorChanges.replaceChildren();
+    monitorScan.replaceChildren();
+    if (!result?.success) {
+      monitorStatus.textContent = result?.error || "Could not check Affinity SDK.";
+      return;
+    }
+    const { currentVersion, previousVersion, changes } = result.data;
+    if (currentVersion && currentVersion !== docsCacheVersion) {
+      docsCache = null;
+      docsCacheVersion = currentVersion;
+    }
+    if (!currentVersion) {
+      monitorStatus.textContent = t("docs.noSnapshot");
+      return;
+    }
+    if (!previousVersion) {
+      monitorStatus.textContent = t("docs.firstSnapshot", { version: currentVersion });
+      return;
+    }
+    monitorStatus.textContent = `${t("docs.changeCount", { previous: previousVersion, current: currentVersion, count: changes.length })}${syncError ? ` ${syncError}` : ""}`;
+    if (!changes.length) return;
+    const list = document.createElement("div");
+    list.className = "api-change-list";
+    for (const change of changes) {
+      const row = document.createElement("div");
+      row.className = "api-change-row";
+      const label = document.createElement("div");
+      label.className = "api-change-label";
+      label.textContent = `${change.module} · ${change.kind}`;
+      const before = document.createElement("code");
+      before.textContent = change.before || "—";
+      const after = document.createElement("code");
+      after.textContent = change.after || "—";
+      row.append(label, before, after);
+      list.appendChild(row);
+    }
+    monitorChanges.appendChild(list);
+    const scanButton = document.createElement("button");
+    scanButton.className = "gh-btn compact";
+    scanButton.textContent = t("docs.scanScripts");
+    const scanResult = document.createElement("div");
+    scanResult.className = "api-scan-result";
+    scanButton.onclick = async () => {
+      scanButton.disabled = true;
+      scanResult.textContent = t("docs.scanningScripts");
+      scanResult.classList.add("loading-indicator");
+      let result;
+      try { result = await window.api.scanApiCompatibility(); }
+      catch (error) { result = { success: false, error: error.message }; }
+      if (!screen.isConnected) return;
+      scanResult.classList.remove("loading-indicator");
+      scanButton.disabled = false;
+      if (!result?.success) {
+        scanResult.textContent = result?.error || "Could not scan scripts.";
+        return;
+      }
+      const { scripts, failed } = result.data;
+      scanResult.replaceChildren();
+      const summary = document.createElement("p");
+      summary.textContent = scripts.length
+        ? t("docs.possibleScripts", { count: scripts.length })
+        : t("docs.noDirectCalls");
+      scanResult.appendChild(summary);
+      for (const script of scripts) {
+        const row = document.createElement("p");
+        row.textContent = `${script.title}: ${script.calls.join(", ")}`;
+        scanResult.appendChild(row);
+      }
+      if (failed) {
+        const warning = document.createElement("p");
+        warning.textContent = t("docs.unreadableScripts", { count: failed });
+        scanResult.appendChild(warning);
+      }
+    };
+    monitorScan.append(scanButton, scanResult);
+  }
+  refreshMonitor.onclick = async () => {
+    const previousVersion = docsCacheVersion;
+    await showApiMonitor(true);
+    if (screen.isConnected && docsCacheVersion !== previousVersion) renderScreen();
+  };
+  await showApiMonitor(true);
 
   // --- SDK search wired into the same screen ---
   const input = screen.querySelector("#docs-q");
@@ -2158,19 +3022,24 @@ async function renderDocs(root) {
     out.style.marginBottom = "28px";
     out.style.color = "var(--text-faint)";
     out.style.fontSize = "12px";
-    out.innerHTML =
-      '<div class="eyebrow accent"><span class="loading">searching</span></div>';
+    out.textContent = t("docs.searching");
+    out.classList.add("loading-indicator");
+    input.disabled = true;
 
     let r;
     try {
       r = await window.api.searchDocs(q);
     } catch (err) {
+      input.disabled = false;
+      out.classList.remove("loading-indicator");
       out.style.cssText =
         "display:block; margin-bottom: 28px; color: var(--danger-text); font-size: 12px; padding: 16px 20px; border: 1px solid var(--danger-border); background: var(--danger-bg); border-radius: var(--r-lg);";
       out.textContent =
         "IPC error: " + (err && err.message ? err.message : String(err));
       return;
     }
+    input.disabled = false;
+    out.classList.remove("loading-indicator");
     if (!r || !r.success) {
       out.style.cssText =
         "display:block; margin-bottom: 28px; color: var(--danger-text); font-size: 12px; padding: 16px 20px; border: 1px solid var(--danger-border); background: var(--danger-bg); border-radius: var(--r-lg);";
@@ -2179,11 +3048,11 @@ async function renderDocs(root) {
         "Search failed with no error message. The MCP bridge may be offline.";
       return;
     }
-    const text = (r.data || "").trim();
-    if (!text) {
+    const { results = [], version, cached } = r.data || {};
+    if (!results.length) {
       out.style.cssText =
         "display:block; margin-bottom: 28px; color: var(--text-faint); font-size: 12px; padding: 16px 20px; border: 1px solid var(--hair); background: var(--bg-card); border-radius: var(--r-lg);";
-      out.textContent = `No hints matched "${q}". The SDK hint pool is cross-session and populated by other tools, it may be empty for this query.`;
+      out.textContent = t("docs.noResults", { query: q });
       return;
     }
     out.className = "doc-reader";
@@ -2191,19 +3060,27 @@ async function renderDocs(root) {
       "display:block; margin-bottom: 28px; padding: 20px 24px; border: 1px solid var(--hair); background: var(--bg-card); border-radius: var(--r-lg);";
     const close = document.createElement("button");
     close.className = "gh-btn compact";
-    close.textContent = "Clear search";
+    close.textContent = t("docs.clearSearch");
     close.style.marginBottom = "14px";
     close.onclick = () => {
       input.value = "";
       resetOut();
     };
-    const content = document.createElement("div");
-    content.innerHTML = window.marked
-      ? window.marked.parse(text)
-      : escapeHtml(text);
     out.innerHTML = "";
     out.appendChild(close);
-    out.appendChild(content);
+    if (cached) {
+      const note = document.createElement("p");
+      note.className = "subhead";
+      note.textContent = t("docs.cachedVersion", { version });
+      out.appendChild(note);
+    }
+    for (const match of results) {
+      const button = document.createElement("button");
+      button.className = "doc-search-hit";
+      button.innerHTML = `<strong>${escapeHtml(match.title)}:${match.line}</strong><span>${escapeHtml(match.snippet)}</span>`;
+      button.onclick = () => openDocReader({ title: match.title });
+      out.appendChild(button);
+    }
   });
 
   // --- Doc cards grid ---
@@ -2215,8 +3092,11 @@ async function renderDocs(root) {
       return;
     }
     docsCache = res.data || [];
+    if (res.cached) {
+      exportStatus.textContent = t("docs.cachedVersion", { version: res.version });
+    }
   }
-  screen.querySelector("#docs-sub").textContent = `${docsCache.length} topics`;
+  screen.querySelector("#docs-sub").textContent = t("docs.topicCount", { count: docsCache.length });
 
   const grid = document.createElement("div");
   grid.className = "docs-grid";
@@ -2226,7 +3106,7 @@ async function renderDocs(root) {
     card.innerHTML = `
       <div class="meta"><span>${String(i + 1).padStart(2, "0")}</span><span>Reference</span></div>
       <h3>${escapeHtml(d.title)}</h3>
-      <div class="read">Read →</div>
+      <div class="read">${escapeHtml(t("docs.read"))}</div>
     `;
     card.onclick = () => openDocReader(d);
     grid.appendChild(card);
@@ -2234,7 +3114,7 @@ async function renderDocs(root) {
   body.appendChild(grid);
 }
 
-function openDocReader(doc) {
+async function openDocReader(doc) {
   const main = document.getElementById("main");
   main.innerHTML = "";
   main.scrollTop = 0;
@@ -2243,7 +3123,7 @@ function openDocReader(doc) {
   const back = document.createElement("button");
   back.className = "gh-btn compact";
   back.style.marginBottom = "20px";
-  back.textContent = "← Back to Documentation";
+  back.textContent = t("docs.back");
   back.onclick = () => renderScreen();
   reader.appendChild(back);
 
@@ -2252,13 +3132,28 @@ function openDocReader(doc) {
   reader.appendChild(title);
 
   const content = document.createElement("div");
-  content.innerHTML =
-    window.marked && doc.content
-      ? window.marked.parse(doc.content)
-      : escapeHtml(doc.content || "");
+  content.innerHTML = `<span class="loading">${escapeHtml(t("docs.loadingTopic"))}</span>`;
   reader.appendChild(content);
 
   main.appendChild(reader);
+  if (doc.content == null) {
+    let result;
+    try {
+      result = await window.api.readDocTopic(doc.title);
+    } catch (error) {
+      if (reader.isConnected) content.textContent = error.message || "Could not load documentation topic.";
+      return;
+    }
+    if (!reader.isConnected) return;
+    if (!result?.success) {
+      content.textContent = result?.error || "Could not load documentation topic.";
+      return;
+    }
+    doc.content = result.data;
+  }
+  content.innerHTML = window.marked && doc.content
+    ? window.marked.parse(doc.content)
+    : escapeHtml(doc.content || "");
 }
 
 // ---------- Upload / Download modals ----------
@@ -2268,18 +3163,18 @@ function openUploadModal() {
   bd.innerHTML = `
     <div class="modal">
       <div class="modal-head">
-        <h3>Add Script</h3>
+        <h3>${escapeHtml(t("app.addScript"))}</h3>
         <button class="icon-btn" id="m-close"></button>
       </div>
       <div class="modal-body">
-        <p>Saves locally and pushes to the bridge.</p>
-        <button class="gh-btn" id="m-pick" style="width:100%">Select .js File</button>
-        <div><label>Title</label><input id="m-title" type="text"></div>
-        <div><label>Description (optional)</label><input id="m-desc" type="text"></div>
+        <p>${escapeHtml(t("upload.description"))}</p>
+        <button class="gh-btn" id="m-pick" style="width:100%">${escapeHtml(t("upload.selectFile"))}</button>
+        <div><label>${escapeHtml(t("upload.title"))}</label><input id="m-title" type="text"></div>
+        <div><label>${escapeHtml(t("upload.optionalDescription"))}</label><input id="m-desc" type="text"></div>
       </div>
       <div class="modal-foot">
-        <button class="gh-btn" id="m-cancel">Cancel</button>
-        <button class="accent-btn" id="m-save">Save Script</button>
+        <button class="gh-btn" id="m-cancel">${escapeHtml(t("action.cancel"))}</button>
+        <button class="accent-btn" id="m-save">${escapeHtml(t("upload.saveScript"))}</button>
       </div>
     </div>`;
   bd.querySelector("#m-close").appendChild(Ico("close", { size: 12 }));
@@ -2309,12 +3204,12 @@ function openUploadModal() {
       return;
     }
     const btn = bd.querySelector("#m-save");
-    btn.innerHTML = '<span class="loading">Saving</span>';
+    btn.innerHTML = `<span class="loading">${escapeHtml(t("action.saving"))}</span>`;
     btn.disabled = true;
     const r = await window.api.saveScript(title, desc, code);
     if (!r || !r.success) {
       alert((r && r.error) || "Save failed");
-      btn.textContent = "Save Script";
+      btn.textContent = t("upload.saveScript");
       btn.disabled = false;
       return;
     }
@@ -2334,11 +3229,11 @@ function openDownloadModal(title) {
   const safe = title.toLowerCase().replace(/[^a-z0-9_-]/g, "-");
   bd.innerHTML = `
     <div class="modal" style="max-width:400px">
-      <div class="modal-head"><h3>Download to Library</h3></div>
-      <div class="modal-body"><div><label>Save as</label><input id="m-name" type="text" value="${escapeHtml(safe)}"></div></div>
+      <div class="modal-head"><h3>${escapeHtml(t("download.toLibrary"))}</h3></div>
+      <div class="modal-body"><div><label>${escapeHtml(t("download.saveAs"))}</label><input id="m-name" type="text" value="${escapeHtml(safe)}"></div></div>
       <div class="modal-foot">
-        <button class="gh-btn" id="m-cancel">Cancel</button>
-        <button class="accent-btn" id="m-ok">Download</button>
+        <button class="gh-btn" id="m-cancel">${escapeHtml(t("action.cancel"))}</button>
+        <button class="accent-btn" id="m-ok">${escapeHtml(t("action.download"))}</button>
       </div>
     </div>`;
   document.body.appendChild(bd);
@@ -2353,12 +3248,12 @@ function openDownloadModal(title) {
     const name = bd.querySelector("#m-name").value.trim();
     if (!name) return;
     const btn = bd.querySelector("#m-ok");
-    btn.innerHTML = '<span class="loading">Downloading</span>';
+    btn.innerHTML = `<span class="loading">${escapeHtml(t("action.downloading"))}</span>`;
     btn.disabled = true;
     const r = await window.api.downloadFromMcp(title, name);
     if (!r || !r.success) {
       alert((r && r.error) || "Download failed");
-      btn.textContent = "Download";
+      btn.textContent = t("action.download");
       btn.disabled = false;
       return;
     }
@@ -2376,19 +3271,19 @@ function openRenameLocalModal(script) {
   bd.innerHTML = `
     <div class="modal" style="max-width:400px">
       <div class="modal-head">
-        <h3>Rename File</h3>
+        <h3>${escapeHtml(t("rename.heading"))}</h3>
         <button class="icon-btn" id="m-close"></button>
       </div>
       <div class="modal-body">
         <div>
-          <label>File name</label>
+          <label>${escapeHtml(t("rename.fileName"))}</label>
           <input id="m-name" type="text" value="${escapeHtml(currentBase)}" autocomplete="off" spellcheck="false">
         </div>
         <p id="m-preview"></p>
       </div>
       <div class="modal-foot">
-        <button class="gh-btn" id="m-cancel">Cancel</button>
-        <button class="accent-btn" id="m-ok">Rename</button>
+        <button class="gh-btn" id="m-cancel">${escapeHtml(t("action.cancel"))}</button>
+        <button class="accent-btn" id="m-ok">${escapeHtml(t("action.rename"))}</button>
       </div>
     </div>`;
   document.body.appendChild(bd);
@@ -2399,7 +3294,7 @@ function openRenameLocalModal(script) {
   const close = () => bd.remove();
   const updatePreview = () => {
     const next = scriptFilenameFromInput(input.value);
-    preview.textContent = next ? `Will become ${next}` : "Enter a valid name.";
+    preview.textContent = next ? t("rename.preview", { name: next }) : t("rename.invalid");
     okBtn.disabled = !next || next === script.file;
   };
 
@@ -2417,12 +3312,12 @@ function openRenameLocalModal(script) {
   okBtn.onclick = async () => {
     const next = scriptFilenameFromInput(input.value);
     if (!next || next === script.file) return;
-    okBtn.innerHTML = '<span class="loading">Renaming</span>';
+    okBtn.innerHTML = `<span class="loading">${escapeHtml(t("action.renaming"))}</span>`;
     okBtn.disabled = true;
     const r = await window.api.renameLocalScript(script.file, next);
     if (!r || !r.success) {
       alert((r && r.error) || "Rename failed");
-      okBtn.textContent = "Rename";
+      okBtn.textContent = t("action.rename");
       updatePreview();
       return;
     }
@@ -2433,97 +3328,6 @@ function openRenameLocalModal(script) {
   input.focus();
   input.select();
   updatePreview();
-}
-
-// ---------- Settings modal (internal — replaces the separate window) ----------
-const DEFAULT_COMMUNITY_REPO =
-  "https://raw.githubusercontent.com/JiriKrblich/Affinity-Community-Scripts/refs/heads/main/registry.json";
-
-function openSettingsModal() {
-  const bd = document.createElement("div");
-  bd.className = "modal-backdrop";
-  bd.innerHTML = `
-    <div class="modal" style="max-width:560px">
-      <div class="modal-head">
-        <h3>Community Repositories</h3>
-        <button class="icon-btn" id="m-close"></button>
-      </div>
-      <div class="modal-body" style="gap:18px;">
-        <p>Paste a GitHub URL (<span style="color:var(--text-strong); font-weight:600;">https://github.com/user/repo</span>) to discover more scripts.</p>
-        <div class="add-repo">
-          <input id="m-repo" type="text" placeholder="https://github.com/user/repository">
-          <button class="accent-btn compact" id="m-add">Add</button>
-        </div>
-        <div>
-          <div class="eyebrow" style="margin-bottom:10px;">Active repositories</div>
-          <div id="m-repo-list"></div>
-        </div>
-      </div>
-    </div>`;
-  bd.querySelector("#m-close").appendChild(Ico("close", { size: 13 }));
-  document.body.appendChild(bd);
-
-  const close = () => bd.remove();
-  bd.querySelector("#m-close").onclick = close;
-  bd.addEventListener("click", (e) => {
-    if (e.target === bd) close();
-  });
-
-  const getDisplayName = (url) => {
-    const m = url.match(/raw\.githubusercontent\.com\/([^\/]+\/[^\/]+)/);
-    return m ? m[1] : url;
-  };
-
-  const list = bd.querySelector("#m-repo-list");
-  const repoInput = bd.querySelector("#m-repo");
-  const addBtn = bd.querySelector("#m-add");
-
-  const load = async () => {
-    const res = await window.api.getRepos();
-    list.innerHTML = "";
-    if (!res.success) return;
-    res.data.forEach((url) => {
-      const row = document.createElement("div");
-      row.className = "repo-row";
-      const isDefault = url === DEFAULT_COMMUNITY_REPO;
-      const displayName = getDisplayName(url);
-      row.innerHTML =
-        `<div class="name">${escapeHtml(displayName)}</div>` +
-        (isDefault
-          ? `<span class="kind">Default</span>`
-          : `<button class="gh-btn compact danger">Remove</button>`);
-      if (!isDefault) {
-        row.querySelector("button").onclick = async () => {
-          if (!confirm(`Remove ${displayName}?`)) return;
-          await window.api.removeRepo(url);
-          load();
-        };
-      }
-      list.appendChild(row);
-    });
-  };
-
-  const submit = async () => {
-    const url = repoInput.value.trim();
-    if (!url) return;
-    addBtn.innerHTML = '<span class="loading">Adding</span>';
-    addBtn.disabled = true;
-    const r = await window.api.addRepo(url);
-    addBtn.textContent = "Add";
-    addBtn.disabled = false;
-    if (!r.success) {
-      alert(r.error);
-      return;
-    }
-    repoInput.value = "";
-    load();
-  };
-  addBtn.onclick = submit;
-  repoInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") submit();
-  });
-
-  load();
 }
 
 // ---------- Nav count helper ----------
@@ -2551,8 +3355,8 @@ async function renderEditor(root) {
   const screen = document.createElement("div");
   screen.className = "editor-screen";
   const origin = state.editorOrigin || "local";
-  const backLabel =
-    origin === "develop" ? "← Back to Code Editor" : "← Back to My Scripts";
+  const backLabel = origin === "develop"
+    ? t("editor.backToCodeEditor") : t("editor.backToMyScripts");
 
   // New scripts get a filename input in the header styled as an editable headline.
   // Existing scripts show the filename static with a dirty-dot indicator.
@@ -2563,10 +3367,11 @@ async function renderEditor(root) {
 
   screen.innerHTML = `
     <div class="editor-header">
-      <button class="gh-btn compact" id="ed-back">${backLabel}</button>
+      <button class="gh-btn compact" id="ed-back">${escapeHtml(backLabel)}</button>
       <div class="editor-filename${isNew ? " new" : ""}">${filenameHtml}</div>
-      <button class="gh-btn compact" id="ed-run" title="Run this buffer in Affinity without installing"><span id="ed-run-ico"></span> Run</button>
-      <button class="accent-btn compact" id="ed-save" disabled>Save</button>
+      ${isNew ? "" : `<button class="gh-btn compact" id="ed-reload" title="${escapeHtml(t("editor.reloadTitle"))}">${escapeHtml(t("editor.reload"))}</button>`}
+      <button class="gh-btn compact" id="ed-run" title="${escapeHtml(t("editor.runTitle"))}"><span id="ed-run-ico"></span> ${escapeHtml(t("action.run"))}</button>
+      <button class="accent-btn compact" id="ed-save" disabled>${escapeHtml(t("action.save"))}</button>
     </div>
     <div class="editor-host" id="editor-host"></div>
   `;
@@ -2574,7 +3379,7 @@ async function renderEditor(root) {
 
   const backBtn = screen.querySelector("#ed-back");
   const saveBtn = screen.querySelector("#ed-save");
-  const dirtyEl = screen.querySelector("#ed-dirty");
+  let dirtyEl = screen.querySelector("#ed-dirty");
   const host = screen.querySelector("#editor-host");
   const nameInput = screen.querySelector("#ed-filename"); // null when not isNew
   backBtn.onclick = () => navigate(origin);
@@ -2608,11 +3413,15 @@ async function renderEditor(root) {
     initialContent = res.data.code || "";
   }
 
+  const editorSettingsResult = await window.api.getEditorSettings();
+  const editorSettings = editorSettingsResult?.success
+    ? editorSettingsResult.data
+    : { indentStyle: "spaces", tabSize: 2 };
   activeEditor = ace.edit(host, {
     mode: "ace/mode/javascript",
     theme: "ace/theme/tomorrow_night",
-    tabSize: 2,
-    useSoftTabs: true,
+    tabSize: editorSettings.tabSize,
+    useSoftTabs: editorSettings.indentStyle === "spaces",
     fontSize: "13px",
     showPrintMargin: false,
     fontFamily: 'SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
@@ -2635,6 +3444,36 @@ async function renderEditor(root) {
   activeEditor.session.on("change", () => {
     if (!state.editorDirty) markDirty(true);
   });
+
+  const attachReload = (reloadBtn) => {
+    reloadBtn.onclick = async () => {
+      if (state.editorDirty && !confirm("Discard unsaved changes and reload this script from disk?")) return;
+      const bufferBeforeRead = activeEditor.getValue();
+      reloadBtn.disabled = true;
+      reloadBtn.textContent = "Reloading…";
+      try {
+        const result = await window.api.readLocalScript(state.editorFile);
+        if (!screen.isConnected || !activeEditor) return;
+        if (!result?.success) {
+          alert("Reload failed: " + (result?.error || "Could not read file"));
+          return;
+        }
+        if (activeEditor.getValue() !== bufferBeforeRead &&
+            !confirm("The editor changed while reloading. Discard those changes and use the file from disk?")) return;
+        activeEditor.setValue(result.data.code || "", -1);
+        markDirty(false);
+      } catch (error) {
+        if (screen.isConnected) alert("Reload failed: " + error.message);
+      } finally {
+        if (screen.isConnected) {
+          reloadBtn.disabled = false;
+          reloadBtn.textContent = t("editor.reload");
+        }
+      }
+    };
+  };
+  const reloadBtn = screen.querySelector("#ed-reload");
+  if (reloadBtn) attachReload(reloadBtn);
 
   const save = async () => {
     if (!activeEditor) return;
@@ -2676,6 +3515,14 @@ async function renderEditor(root) {
       state.editorFile = targetFilename;
       const fnameEl = screen.querySelector(".editor-filename");
       fnameEl.innerHTML = `<span class="ed-dirty" id="ed-dirty"></span>${escapeHtml(targetFilename)}`;
+      dirtyEl = fnameEl.querySelector("#ed-dirty");
+      const newReloadBtn = document.createElement("button");
+      newReloadBtn.className = "gh-btn compact";
+      newReloadBtn.id = "ed-reload";
+      newReloadBtn.title = t("editor.reloadTitle");
+      newReloadBtn.textContent = t("editor.reload");
+      fnameEl.after(newReloadBtn);
+      attachReload(newReloadBtn);
     }
 
     markDirty(false);
@@ -2695,18 +3542,18 @@ async function renderDevelop(root) {
   const screen = document.createElement("div");
   screen.className = "screen";
   screen.innerHTML = `
-    <div class="eyebrow">Development</div>
+    <div class="eyebrow">${escapeHtml(t("nav.development"))}</div>
     <div class="screen-header">
       <div>
-        <h1 style="margin-bottom:6px">Code Editor</h1>
-        <p class="subhead" style="margin:0">Write new scripts or edit existing ones. Changes auto-sync to Affinity.</p>
+        <h1 style="margin-bottom:6px">${escapeHtml(t("nav.codeEditor"))}</h1>
+        <p class="subhead" style="margin:0">${escapeHtml(t("editor.description"))}</p>
       </div>
       <div class="actions">
-        <button class="accent-btn compact" id="btn-new-script"><span id="ico-new-plus"></span> New Script</button>
+        <button class="accent-btn compact" id="btn-new-script"><span id="ico-new-plus"></span> ${escapeHtml(t("editor.newScript"))}</button>
       </div>
     </div>
 
-    <div class="eyebrow" style="margin-bottom:12px">My Scripts</div>
+    <div class="eyebrow" style="margin-bottom:12px">${escapeHtml(t("nav.myScripts"))}</div>
     <div class="dev-list" id="dev-local"></div>
   `;
   root.appendChild(screen);
@@ -2745,7 +3592,7 @@ async function renderDevelop(root) {
       btnCell.style.textAlign = "right";
       const btn = document.createElement("button");
       btn.className = "gh-btn compact";
-      btn.textContent = "Edit";
+      btn.textContent = t("action.edit");
       btn.onclick = (e) => {
         e.stopPropagation();
         openEditor(it.file, "develop");

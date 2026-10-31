@@ -1,19 +1,26 @@
 # Script Manager for Affinity
+
+The UI message catalogs are in `locales/` for English, Czech, Japanese, Simplified Chinese, Korean, German, French, and Spanish. On first launch, the app selects a supported system language; all others use English. Change the language later in **App Settings → General**. Catalog entries use `t("key")` and optional `{placeholder}` values, with English fallback for missing translations.
 ![Cover photo with screenshot of Script Manager](readme/AffinityScriptManager_1.4.0_Overview.webp)
 
 ## Features
 
-* **My Scripts:** Your local `.js` library, safely stored in your system's native user data folder and shown with name, description, size, and last-modified time. Two tabs:
+* **My Scripts:** Your local `.js` library, stored in the default user data folder or a folder you choose and shown with name, description, size, and last-modified time. Three tabs:
   * **Local** — your scripts, each with an install dot (grey = not installed, green = active in Affinity). Click the dot (or the row) to push it into Affinity. Search, favorite, rename, edit, export, share, or delete from the row.
+  * **Watched** — scripts from extra folders you add in App Settings. Install them into Affinity from this tab; changes to installed scripts are watched for sync. Automatic sync is skipped when another library script has the same name.
   * **Just in Affinity** — scripts that live in Affinity but aren't in your local library (blue dot), with **Download to My Scripts** and **Download to folder**.
-* **Bridge diagnostics ("More info"):** Live connection status, round-trip latency, and an event stream log for the local MCP bridge — tucked behind a **More info** button so it stays out of your way.
+* **App Settings:** Open or change the main scripts folder, restore its default location, add or remove watched folders, and manage community repositories. When changing the main folder, choose whether to move existing scripts and how to handle each duplicate filename. Files left in the old location remain accessible through a watched folder.
+* **Affinity Status:** Check the live MCP connection, permissions available to scripts run through MCP, and allowed file system folders. The page highlights whether Affinity allows access to your Desktop; saved scripts can have different individual permissions.
+* **Bridge diagnostics:** The Affinity Status page shows the live MCP connection, server version, round-trip latency, and a log of connection checks.
 * **Watch Mode:** Always-on file watcher. When you save a script that is already installed in Affinity, the app automatically re-pushes it — no manual step needed.
-* **Community Scripts:** Browse scripts from any GitHub-hosted registry. Image previews, a **Featured** carousel, filter by category, sort, and mark favorites. The install button reflects real state: **Install**, **Installed**, or **Update** when a newer version is available. Save-only mode downloads without installing.
+* **Community Scripts:** Browse scripts from any GitHub-hosted registry. Image previews, a **Featured** carousel, filter by category and library status, sort, and mark favorites. The action button shows **Install**, **In library**, or **Update** when a newer version is available. Save-only mode downloads without installing.
+* **SDK documentation:** Browse Affinity's SDK topics, search their full text, and download a versioned Markdown export. Once a full SDK copy has been prepared by search or export, it remains available locally when Affinity's MCP bridge is offline.
+* **Script history:** In a GitHub-hosted community script's details, open **Version history** to view its 10 most recent file revisions. Save any revision as a separate copy, install it if the script is not local yet, or downgrade the local script after creating a backup. Downgrading does not replace an existing copy inside Affinity. History follows the current file path, so revisions before a file rename or move may not appear.
 * **Run without install:** Open a community script's details (or the Code Editor) and run it in Affinity right away to see the console output *and* a rendered preview — before adding it to your library.
 * **Share to the community:** Publish a local or Affinity script to the community repository straight from the app. It prepares a ready-to-submit GitHub issue and copies it to your clipboard — no tokens, your GitHub credentials never touch the app.
 * **Shared favorites:** Favorites are unified across My Scripts and Community — star a script in one place and it's marked in the other.
 * **Built-in Code Editor:** Write new scripts from scratch or edit existing ones with a full Ace editor (JavaScript syntax highlighting, dark theme, `Cmd/Ctrl+S` to save, **Run** to try the current buffer). New scripts get a pre-filled metadata header template.
-* **In-App Documentation & SDK Search:** Fetch the Affinity SDK documentation from the MCP server and read it in a clean Markdown reader, and search SDK hints without leaving the app.
+* **In-App Documentation & SDK Search:** Fetch the Affinity SDK documentation from the MCP server and read it in a clean Markdown reader, and search SDK hints without leaving the app. The API changes panel saves versioned JSLib snapshots and compares method signatures after an Affinity update; an optional scan highlights scripts that may call changed methods.
 * **Updates panel & badges:** When community repos ship newer versions of scripts you have locally, they're grouped in an **Updates available** panel (with per-script and *Update all* actions) and flagged with a badge.
 * **Auto-Update Checker:** The app checks GitHub Releases on launch and shows an update button in the sidebar when a new version is available.
 * **Drag & Drop:** Drag one or more `.js` files anywhere onto the window. A full-window overlay appears, and after dropping you choose **Just save to My Scripts** or **Save & install**.
@@ -27,21 +34,31 @@
 
 **Adding a script from disk:** Click **Add Script** in the sidebar, or drag one or more `.js` files anywhere onto the window. On drop, choose **Just save to My Scripts** or **Save & install**.
 
+**Finding or changing the scripts folder:** Click **Open folder** in My Scripts, or go to **App Settings** to change the main folder and add watched folders. The main folder receives new and downloaded scripts. A watched folder is listed separately and is not used as the destination for new scripts.
+
+**Managing community repositories:** Open **App Settings → Community repositories**, or click **Manage repositories** in Community to jump there. Add a GitHub repository URL or remove a custom repository from the list.
+
+**Windows installation:** The installer lets you choose installation for the current user or all users, and select the application installation directory. The application installation directory is separate from the scripts folder configured in App Settings.
+
 **Installing a script into Affinity:** In **My Scripts → Local**, click the grey dot on the left of any row (or click anywhere on the row). The dot turns green when the script is live in Affinity.
 
 **Downloading from Affinity:** Open **My Scripts → Just in Affinity** to see scripts that live in Affinity but not in your library, and click the download icon to pull one into **My Scripts** (or save it to a folder).
 
-**Editing a script:** Click the pencil icon in the Actions column, or open the **Code Editor** and pick a script. Save with `Cmd+S` / `Ctrl+S`. If the script is already installed in Affinity, Watch Mode re-pushes the update automatically. Hit **Run** to try the current buffer in Affinity without installing.
+**Editing a script:** Click the pencil icon in the Actions column, or open the **Code Editor** and pick a script. Save with `Cmd+S` / `Ctrl+S`. If the script is already installed in Affinity, Watch Mode re-pushes the update automatically. If you edit the file externally, click **Reload from disk** before **Run** to use its latest contents. Reload asks before discarding unsaved editor changes.
+
+**Editor indentation:** In **App Settings → Code editor**, choose tabs or spaces and a tab width from 1 to 8. The choice applies when you next open a script; existing code is not reformatted. App Settings also has separate **Script folders** and **Community repositories** categories.
 
 **Writing a new script:** Go to **Code Editor** and click **New Script**. A blank buffer opens with a pre-filled metadata header. Give it a name, write your code, then save.
 
-**Community scripts:** Open the **Community** tab. Browse, filter, or search (`⌘K`). Click **Install** to save to your library and push to Affinity at once, or the save icon to download only. Click a card to open its details, where you can **Run without install** to preview what a script does before adding it.
+**Community scripts:** Open the **Community** tab. Browse by category, use the library status filter (**All**, **In library**, **Not in library**, **Updates available**), or search (`⌘K`). Click **Install** to save to your library and push to Affinity at once, or the save icon to download only. Click a card to open its details, where you can **Run without install** to preview what a script does before adding it.
 
 **Sharing your script:** Click the **Share** (GitHub) action on any local or Affinity script, or **Submit Script** in the Community tab. The app copies a ready-to-submit contribution to your clipboard and opens a GitHub issue — paste it in and submit.
 
-**Bridge status:** In **My Scripts**, click **More info** for the Affinity MCP connection details, latency, and event log.
+**Bridge status:** Open **Affinity Status** in the sidebar for the Affinity MCP connection details, latency, permissions, and event log.
 
-**Reading the docs / searching the SDK:** Click **Documentation** in the sidebar to read SDK topics as Markdown, and use the search bar to query SDK hints directly.
+**Reading the docs / searching the SDK:** Click **Documentation** in the sidebar to list SDK topics, then open one to load and read it as Markdown. Opened topics are cached while the Affinity version stays the same. Use the search bar to query SDK hints directly.
+
+**Checking API changes:** The Documentation screen saves nine core JSLib modules from the connected Affinity version. After a newer version is seen, it compares method signatures with the previous snapshot, including parameter order, and offers a scan of scripts installed in Affinity. Scan results indicate possible impact only; unchanged signatures can still hide behavioral changes, and indirect calls may not be found. Up to three version snapshots are kept in the app's user data folder.
 
 ---
 

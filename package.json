@@ -1,6 +1,6 @@
 {
   "name": "affinity-script-manager",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "Graphic UI for managing Affinity App Scripts",
   "main": "main.js",
   "scripts": {
@@ -8,7 +8,8 @@
     "build": "electron-builder"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "latest"
+    "@modelcontextprotocol/sdk": "latest",
+    "acorn": "^8.19.0"
   },
   "devDependencies": {
     "electron": "latest",
@@ -40,6 +41,11 @@
     "win": {
       "target": "nsis",
       "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
     },
     "linux": {
       "target": "AppImage",
